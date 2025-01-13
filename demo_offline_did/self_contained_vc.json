@@ -25,8 +25,8 @@
         "verificationMethod": {
             "id": "did:example:123456789abcdefghi#keys-1",
             "type": "EcdsaSecp256r1",
-            "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE0ZQ7DHBEDY+Xn6iZEhzI18LKtcET\nBwUfEUHaCnZ0u4ci865T4KP9sYflU7NWm0gvS6CM68SRbzeh66lqhBPumA==\n-----END PUBLIC KEY-----\n"
+            "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgqUHPNh/6DAkb/SCt50naZTWj61y\nLJX528VEibzROQBduRLybSr97Y05Wg3Q8ACIcHwcfGC9pbVI7rMUBc6Usg==\n-----END PUBLIC KEY-----\n"
         },
-        "signature": "MEUCIQDY5OTHa2zEpAuLjC-uwXjBsnKQH4L78H9-fHhMw8PZ9QIgKEvAebxOJbBFzf_7rvyeO6iQhEpOQux3hXLOfxKbZME="
+        "signature": "MEUCIFxfswihPyHFUKsXzh60kU_YEhbG0RgvFXRJ3tmM43fmAiEAkfDDZtqq6GSjN0yvpfzBYH3jikobcWu5-0qqM5JmU9w="
     }
 }
