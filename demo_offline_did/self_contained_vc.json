@@ -5,17 +5,17 @@
     "id": "http://example.edu/credentials/3732",
     "type": [
         "VerifiableCredential",
-        "UniversityDegreeCredential"
+        "MilitaryControlCredential"
     ],
     "issuer": {
         "id": "did:example:123456789abcdefghi",
-        "name": "Example University"
+        "name": "Example Army"
     },
     "credentialSubject": {
         "id": "did:example:abcdef1234567",
         "degree": {
-            "type": "BachelorDegree",
-            "name": "Bachelor of Science and Arts"
+            "type": "ControlPermissions",
+            "name": "Drone Control Permissions"
         }
     },
     "issuanceDate": "2025-01-13T21:19:10Z",
@@ -25,8 +25,8 @@
         "verificationMethod": {
             "id": "did:example:123456789abcdefghi#keys-1",
             "type": "EcdsaSecp256r1",
-            "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgqUHPNh/6DAkb/SCt50naZTWj61y\nLJX528VEibzROQBduRLybSr97Y05Wg3Q8ACIcHwcfGC9pbVI7rMUBc6Usg==\n-----END PUBLIC KEY-----\n"
+            "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEM+zjUBQPF6OCtaHPv9BlLZrekzhW\nMPA6JYQ7nAvIMH6erSaqNxtEkTW1TpsAFI+5c/IKIQoEB53rWIhewEJhUw==\n-----END PUBLIC KEY-----\n"
         },
-        "signature": "MEUCIFxfswihPyHFUKsXzh60kU_YEhbG0RgvFXRJ3tmM43fmAiEAkfDDZtqq6GSjN0yvpfzBYH3jikobcWu5-0qqM5JmU9w="
+        "signature": "MEUCIQDwYeL_6OQe5azEef_mQrW8wXKQpXfzn_1KbqPaQNKyyAIgGxIgvvCKyPPc8A4IwyVhucLptMsiE0ACnR8WhLSHWgE="
     }
 }

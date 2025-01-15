@@ -18,17 +18,17 @@
         "id": "http://example.edu/credentials/3732",
         "type": [
             "VerifiableCredential",
-            "UniversityDegreeCredential"
+            "MilitaryControlCredential"
         ],
         "issuer": "did:example:123456789abcdefghi",
         "credentialSubject": {
             "id": "did:example:abcdef1234567",
             "degree": {
-                "type": "BachelorDegree",
-                "name": "Bachelor of Science and Arts"
+                "type": "ControlPermissions",
+                "name": "Drone Control Permissions"
             }
         },
         "issuanceDate": "2025-01-13T21:19:10Z"
     },
-    "signature": "MEUCIGn6b3UC9HNzwYH6oDBrpwhjFb6-3zHrAhqEmM6sXE1iAiEAgm6aZQjXUwSBup66JsOAugpqdhBDF8puMCN-WBNDMB0="
+    "signature": "MEYCIQDg6Y3OVQtOiqtr5dNIqhLeOT9roJyuMFhjGLtuGI4yeAIhANrV2uLWXgghv6Q6hwMdU4LTyP5GPsLMUepKmFqHU_ub"
 }

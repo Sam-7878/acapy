@@ -8,16 +8,16 @@ from cryptography.hazmat.primitives import serialization
 verifiable_credential = {
     "@context": ["https://www.w3.org/2018/credentials/v1"],
     "id": "http://example.edu/credentials/3732",
-    "type": ["VerifiableCredential", "UniversityDegreeCredential"],
+    "type": ["VerifiableCredential", "MilitaryControlCredential"],
     "issuer": {
         "id": "did:example:123456789abcdefghi",
-        "name": "Example University"
+        "name": "Example Army"
     },
     "credentialSubject": {
         "id": "did:example:abcdef1234567",
         "degree": {
-            "type": "BachelorDegree",
-            "name": "Bachelor of Science and Arts"
+            "type": "ControlPermissions",
+            "name": "Drone Control Permissions"
         }
     },
     "issuanceDate": "2025-01-13T21:19:10Z"
