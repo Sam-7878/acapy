@@ -25,7 +25,7 @@ verifiable_credential = {
     "issuer": "did:example:123456789abcdefghi",
     "credentialSubject": {
         "id": "did:example:abcdef1234567",
-        "degree": {
+        "permission": {
             "type": "ControlPermissions",
             "name": "Drone Control Permissions"
         }

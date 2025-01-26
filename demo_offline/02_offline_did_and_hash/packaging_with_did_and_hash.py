@@ -35,7 +35,7 @@ def create_verifiable_credential(issuer_did):
         "issuer": issuer_did,
         "credentialSubject": {
             "id": "did:example:abcdef1234567",
-            "degree": {
+            "permission": {
                 "type": "ControlPermissions",
                 "name": "Drone Control Permissions"
             }
