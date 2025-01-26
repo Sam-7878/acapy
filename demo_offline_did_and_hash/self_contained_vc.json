@@ -1,0 +1,33 @@
+{
+    "@context": [
+        "https://www.w3.org/2018/credentials/v1"
+    ],
+    "id": "http://example.edu/credentials/3732",
+    "type": [
+        "VerifiableCredential",
+        "MilitaryControlCredential"
+    ],
+    "issuer": {
+        "id": "did:example:issuer12345",
+        "name": "Example Army"
+    },
+    "credentialSubject": {
+        "id": "did:example:abcdef1234567",
+        "degree": {
+            "type": "ControlPermissions",
+            "name": "Drone Control Permissions"
+        }
+    },
+    "issuanceDate": "2025-01-13T21:19:10Z",
+    "hash": "0278eb3723dcb146faacb7603d6f043b5f989718216b7fbd4813ae51508795e8",
+    "proof": {
+        "type": "EcdsaSecp256r1Signature2019",
+        "created": "2025-01-13T21:19:10Z",
+        "verificationMethod": {
+            "id": "did:example:issuer12345#keys-1",
+            "type": "EcdsaSecp256r1",
+            "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEo/sm9jol0RZpkMeVZ0F1Yw2DksRT\nA9q25TL+cq5NeCQ6IwAUe9lom5cjRWUnXzIhdfWqjvrlsDA1sSQsnDqMAg==\n-----END PUBLIC KEY-----\n"
+        },
+        "signature": "MEUCIFpQoAXd5Pxn-rhSNhKesdY26ZQAv1mlXd9Xtciuh-KmAiEA_p9jF4aqGphQ89kI_qObiScbneA0DbDGBwJWa4gbHn8="
+    }
+}

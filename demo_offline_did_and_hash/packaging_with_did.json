@@ -1,0 +1,36 @@
+{
+    "did_document": {
+        "@context": "https://w3id.org/did/v1",
+        "id": "did:example:issuer12345",
+        "verificationMethod": [
+            {
+                "id": "did:example:issuer12345#keys-1",
+                "type": "Ed25519VerificationKey2018",
+                "controller": "did:example:issuer12345",
+                "publicKeyBase58": "Base58PublicKeyHere"
+            }
+        ],
+        "hash": "ff5758a979fd8bd3e3eab9dc39e318c0b84ea599b994516cf63aff343cba16fa"
+    },
+    "verifiable_credential": {
+        "@context": [
+            "https://www.w3.org/2018/credentials/v1"
+        ],
+        "id": "http://example.edu/credentials/3732",
+        "type": [
+            "VerifiableCredential",
+            "MilitaryControlCredential"
+        ],
+        "issuer": "did:example:issuer12345",
+        "credentialSubject": {
+            "id": "did:example:abcdef1234567",
+            "degree": {
+                "type": "ControlPermissions",
+                "name": "Drone Control Permissions"
+            }
+        },
+        "issuanceDate": "2025-01-13T21:19:10Z",
+        "hash": "18f84454a044305be4205aa2e60e3812a423f4b7c38e6cadd993afb9b313058d"
+    },
+    "signature": "MEYCIQDvrmkLLd5NeZVZhZol8zCo9CV4e4holpbpeqRvkeyU0wIhAO_nZaOYGd8QSJxw83-G1kfS5x_EpThIIJgXskssI6Sy"
+}
