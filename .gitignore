@@ -2,6 +2,10 @@
 ### Python
 ###
 
+# generated files of offline demos
+demo_offline/*/*.json
+demo_offline/*/*.pem
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
