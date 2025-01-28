@@ -5,6 +5,7 @@
 # generated files of offline demos
 demo_offline/*/*.json
 demo_offline/*/*.pem
+demo_offline/*.db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

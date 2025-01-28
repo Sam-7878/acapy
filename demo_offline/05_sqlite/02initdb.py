@@ -2,7 +2,7 @@ from pysqlcipher3 import dbapi2 as sqlite
 
 # 데이터베이스 초기화
 def init_db():
-    conn = sqlite.connect("wallet.db")  # SQLite 데이터베이스 파일
+    conn = sqlite.connect("../wallet.db")  # SQLite 데이터베이스 파일
     cursor = conn.cursor()
 
     # 암호화 키 설정

@@ -7,7 +7,7 @@ from datetime import datetime
 # DID Document 데이터 삽입
 # DID Document 삽입
 def insert_did(did, public_key, service_endpoint=None):
-    conn = sqlite.connect("wallet.db")
+    conn = sqlite.connect("../wallet.db")
     cursor = conn.cursor()
     # 암호화 키 설정
     cursor.execute("PRAGMA key = 'securepassword'")  # 데이터베이스 암호화 키 설정
@@ -35,7 +35,7 @@ def create_did():
 #######################################################
 # Verifiable Credential 삽입
 def insert_vc(vc_id, issuer, holder, credential_data, signature):
-    conn = sqlite.connect("wallet.db")
+    conn = sqlite.connect("../wallet.db")
     cursor = conn.cursor()
     # 암호화 키 설정
     cursor.execute("PRAGMA key = 'securepassword'")  # 데이터베이스 암호화 키 설정
@@ -63,7 +63,7 @@ def create_vc(issuer, holder, credential_data):
 #######################################################
 # Private Key 삽입
 def insert_private_key(did, private_key):
-    conn = sqlite.connect("wallet.db")
+    conn = sqlite.connect("../wallet.db")
     cursor = conn.cursor()
     # 암호화 키 설정
     cursor.execute("PRAGMA key = 'securepassword'")  # 데이터베이스 암호화 키 설정
@@ -90,7 +90,7 @@ def create_private_key(did):
 ## 데이터 조회
 # DID 조회
 def get_did(did):
-    conn = sqlite.connect("wallet.db")
+    conn = sqlite.connect("../wallet.db")
     cursor = conn.cursor()
     # 암호화 키 설정
     cursor.execute("PRAGMA key = 'securepassword'")  # 데이터베이스 암호화 키 설정
@@ -102,7 +102,7 @@ def get_did(did):
 
 # VC 조회
 def get_vc(vc_id):
-    conn = sqlite.connect("wallet.db")
+    conn = sqlite.connect("../wallet.db")
     cursor = conn.cursor()
     # 암호화 키 설정
     cursor.execute("PRAGMA key = 'securepassword'")  # 데이터베이스 암호화 키 설정
@@ -114,7 +114,7 @@ def get_vc(vc_id):
 
 # Private Key 조회
 def get_private_key(did):
-    conn = sqlite.connect("wallet.db")
+    conn = sqlite.connect("../wallet.db")
     cursor = conn.cursor()
     # 암호화 키 설정
     cursor.execute("PRAGMA key = 'securepassword'")  # 데이터베이스 암호화 키 설정
