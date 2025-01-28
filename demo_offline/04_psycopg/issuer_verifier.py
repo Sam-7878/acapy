@@ -27,6 +27,6 @@ def verify_issuer(vc_path, issuer_path):
         print("\nStep 3: Issuer verification failed!")
 
 # Verify the Issuer in a Verifiable Credential
-vc_path = "updated_verifiable_credential.json"
-issuer_path = "issuer_did_document.json"
+vc_path = "issuer_vc.json"
+issuer_path = "issuer.json"
 verify_issuer(vc_path, issuer_path)

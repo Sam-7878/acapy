@@ -49,10 +49,10 @@ stored_did_document = create_did_document()
 verifiable_credential = create_verifiable_credential(stored_did_document["id"])
 
 # Save the DID Document and VC as JSON files
-with open("updated_did_document.json", "w") as did_file:
+with open("issuer.json", "w") as did_file:
     json.dump(stored_did_document, did_file, indent=4)
 
-with open("updated_verifiable_credential.json", "w") as vc_file:
+with open("issuer_vc.json", "w") as vc_file:
     json.dump(verifiable_credential, vc_file, indent=4)
 
 print("\nStep 3: Saved DID Document and Verifiable Credential to JSON files.")
