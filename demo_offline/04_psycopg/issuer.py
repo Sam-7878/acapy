@@ -1,9 +1,10 @@
+import psycopg
 import json
 import hashlib
 
 # Function to compute a hash for a data structure
 def compute_hash(data):
-    serialized_data = json.dumps(data, sort_keys=True).encode('utf-8')
+    serialized_data = json.dumps(data, sort_keys=True).encode("utf-8")
     return hashlib.sha256(serialized_data).hexdigest()
 
 # Step 1: Create Issuer DID Document
@@ -19,8 +20,7 @@ def create_did_document():
         }]
     }
     did_document["hash"] = compute_hash(did_document)
-    print("Step 1: Generated DID Document:")
-    print(json.dumps(did_document, indent=4))
+    print("Generated DID Document:", json.dumps(did_document, indent=4))
     return did_document
 
 # Step 2: Create Verifiable Credential (VC)
@@ -40,19 +40,54 @@ def create_verifiable_credential(issuer_did):
         "issuanceDate": "2025-01-13T21:19:10Z"
     }
     verifiable_credential["hash"] = compute_hash(verifiable_credential)
-    print("\nStep 2: Generated Verifiable Credential:")
-    print(json.dumps(verifiable_credential, indent=4))
+    print("Generated Verifiable Credential:", json.dumps(verifiable_credential, indent=4))
     return verifiable_credential
 
-# Generate and save DID Document and VC
-stored_did_document = create_did_document()
-verifiable_credential = create_verifiable_credential(stored_did_document["id"])
+# Function to save DID Document and VC to AgensGraph
+def save_to_agensgraph(did_document, verifiable_credential):
+    connection_string = "host=localhost port=5432 dbname=test user=sam"
 
-# Save the DID Document and VC as JSON files
-with open("issuer.json", "w") as did_file:
-    json.dump(stored_did_document, did_file, indent=4)
+    try:
+        with psycopg.connect(connection_string) as conn:
+            with conn.cursor() as cur:
+                # Create tables if not exist
+                cur.execute("CREATE TABLE IF NOT EXISTS did_documents (id SERIAL PRIMARY KEY, did JSONB, hash TEXT)")
+                cur.execute("CREATE TABLE IF NOT EXISTS verifiable_credentials (id SERIAL PRIMARY KEY, vc JSONB, hash TEXT)")
 
-with open("issuer_vc.json", "w") as vc_file:
-    json.dump(verifiable_credential, vc_file, indent=4)
+                # Insert DID Document
+                cur.execute(
+                    "INSERT INTO did_documents (did, hash) VALUES (%s, %s) RETURNING id", 
+                    (json.dumps(did_document), did_document["hash"])
+                )
+                did_doc_id = cur.fetchone()
+                print(f"Inserted DID Document with ID: {did_doc_id}")
 
-print("\nStep 3: Saved DID Document and Verifiable Credential to JSON files.")
+                # Insert Verifiable Credential
+                cur.execute(
+                    "INSERT INTO verifiable_credentials (vc, hash) VALUES (%s, %s) RETURNING id", 
+                    (json.dumps(verifiable_credential), verifiable_credential["hash"])
+                )
+                vc_id = cur.fetchone()
+                print(f"Inserted Verifiable Credential with ID: {vc_id}")
+
+                # Fetch and display all records
+                cur.execute("SELECT * FROM did_documents")
+                did_docs = cur.fetchall()
+                print("DID Documents:", json.dumps(did_docs, indent=4))
+
+                cur.execute("SELECT * FROM verifiable_credentials")
+                vcs = cur.fetchall()
+                print("Verifiable Credentials:", json.dumps(vcs, indent=4))
+
+                conn.commit()
+                print("DID Document and Verifiable Credential saved successfully.")
+
+    except Exception as e:
+        print("Failed to save data to AgensGraph:", e)
+
+# Generate DID Document and VC
+did_document = create_did_document()
+verifiable_credential = create_verifiable_credential(did_document["id"])
+
+# Save them to AgensGraph
+save_to_agensgraph(did_document, verifiable_credential)
