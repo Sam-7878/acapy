@@ -5,9 +5,19 @@ import json
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
+# ----------------------------
+# DID 관련
+# ----------------------------
+
+def create_did() -> str:
+    return f"did:example:{uuid.uuid4().hex[:16]}"
+
 def generate_did() -> str:
     return f"did:example:{uuid.uuid4()}"
 
+# ----------------------------
+# VC 생성
+# ----------------------------
 def create_vc(issuer_did: str, subject_did: str, data: dict, private_key) -> dict:
     vc = {
         "@context": ["https://www.w3.org/2018/credentials/v1"],
@@ -32,6 +42,9 @@ def create_vc(issuer_did: str, subject_did: str, data: dict, private_key) -> dic
     }
     return vc
 
+# ----------------------------
+# VC 검증
+# ----------------------------
 def verify_vc(vc: dict, public_key) -> bool:
     proof = vc.get("proof")
     if not proof:

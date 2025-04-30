@@ -39,6 +39,7 @@ def verify_traversal_a(config: TestConfig) -> dict:
 
     return {"verified": verified, "elapsed": elapsed}
 
+
 # === Traversal 검증: 시나리오 B ===
 def verify_traversal_b(config: TestConfig) -> dict:
     conn = psycopg.connect(
@@ -66,6 +67,7 @@ def verify_traversal_b(config: TestConfig) -> dict:
     conn.close()
 
     return {"verified": verified, "elapsed": elapsed}
+
 
 # === Traversal 검증: 시나리오 C ===
 def verify_traversal_c(config: TestConfig) -> dict:
@@ -97,8 +99,8 @@ def verify_traversal_c(config: TestConfig) -> dict:
 
 # === 엔트리 포인트 ===
 if __name__ == "__main__":
-#    cfg = TestConfig("config/test_small.json")
-    cfg = TestConfig("config/test_large.json")
+    cfg = TestConfig("config/test_small.json")
+#    cfg = TestConfig("config/test_large.json")
     result_a = verify_traversal_a(cfg)
     result_b = verify_traversal_b(cfg)
     result_c = verify_traversal_c(cfg)

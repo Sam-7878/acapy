@@ -10,8 +10,13 @@ import sys, os
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 # === 모듈 임포트 ===
 from common.load_config import TestConfig
-from common.did_utils import generate_did, generate_key_pair, create_vc, verify_vc
+from common.did_utils import (
+    generate_did, generate_key_pair, load_private_key, load_public_key,
+    create_did, create_vc, verify_vc)
 
+# === 설정 ===
+PRIVATE_KEY_PATH = "common/keys/commander_private.pem"
+PUBLIC_KEY_PATH = "common/keys/commander_public.pem"
 
 def run_test_case_b(config: TestConfig):
     print("[B-Test] Running DID + VC + PostgreSQL Test")
@@ -42,26 +47,53 @@ def run_test_case_b(config: TestConfig):
     conn.commit()
 
     # 키 쌍 생성 (명령자 역할)
-    issuer_private, issuer_public = generate_key_pair()
+    #issuer_private, issuer_public = generate_key_pair()
 
     insert_start = time.perf_counter()
 
     # VC 생성 및 삽입
+    # for i in range(config.num_mission):
+    #     issuer_did = generate_did()
+    #     subject_did = generate_did()
+    #     payload = {
+    #         "mission_id": f"M{i:04}",
+    #         "content": f"Mission content {i}"
+    #     }
+
+    #     vc = create_vc(issuer_did, subject_did, payload, issuer_private)
+    #     vc_id = vc["id"]
+
+    #     cur.execute(
+    #         "INSERT INTO vc_test (vc_id, issuer_did, subject_did, vc_json) VALUES (%s, %s, %s, %s)",
+    #         (vc_id, issuer_did, subject_did, json.dumps(vc))
+    #     )
+
+    # 2025-04-30 modified by su.
+    # 고정된 키 불러오기
+    issuer_private = load_private_key(PRIVATE_KEY_PATH)
+    issuer_public  = load_public_key(PUBLIC_KEY_PATH)
+    issuer_did = "did:example:issuer"
+
+    inserted = 0
+    start = time.perf_counter()
+
     for i in range(config.num_mission):
-        issuer_did = generate_did()
-        subject_did = generate_did()
+        subject_did = create_did()
         payload = {
-            "mission_id": f"M{i:04}",
+            "mission_id": f"M{i:04d}",
             "content": f"Mission content {i}"
         }
 
         vc = create_vc(issuer_did, subject_did, payload, issuer_private)
         vc_id = vc["id"]
 
-        cur.execute(
-            "INSERT INTO vc_test (vc_id, issuer_did, subject_did, vc_json) VALUES (%s, %s, %s, %s)",
-            (vc_id, issuer_did, subject_did, json.dumps(vc))
-        )
+        cur.execute("""
+            INSERT INTO vc_test (vc_id, issuer_did, subject_did, vc_json)
+            VALUES (%s, %s, %s, %s)
+        """, (vc_id, issuer_did, subject_did, json.dumps(vc)))
+
+        inserted += 1
+
 
     conn.commit()
     insert_time = time.perf_counter() - insert_start
@@ -92,6 +124,7 @@ def run_test_case_b(config: TestConfig):
     }
 
 if __name__ == "__main__":
-    cfg = TestConfig("config/test_small.json")
+#    cfg = TestConfig("config/test_small.json")
+    cfg = TestConfig("config/test_large.json")
     result = run_test_case_b(cfg)
     print("[B-Test] Result:", result)

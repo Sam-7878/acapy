@@ -10,7 +10,13 @@ import sys, os
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 # === 모듈 임포트 ===
 from common.load_config import TestConfig
-from common.did_utils import generate_did, generate_key_pair, create_vc, verify_vc
+from common.did_utils import (
+    generate_did, generate_key_pair, load_private_key, load_public_key,
+    create_did, create_vc, verify_vc)
+
+# === 설정 ===
+PRIVATE_KEY_PATH = "common/keys/commander_private.pem"
+PUBLIC_KEY_PATH = "common/keys/commander_public.pem"
 
 def run_test_case_c(config: TestConfig):
     print("[C-Test] Running DID + VC + AgensGraph Test")
@@ -47,32 +53,67 @@ def run_test_case_c(config: TestConfig):
     conn.commit()
 
     # VC 생성 및 Graph 삽입
-    issuer_private, issuer_public = generate_key_pair()
+    # issuer_private, issuer_public = generate_key_pair()
 
     insert_start = time.perf_counter()
 
+    # for i in range(config.num_mission):
+    #     issuer_did = generate_did()
+    #     subject_did = generate_did()
+    #     payload = {
+    #         "mission_id": f"M{i:04}",
+    #         "content": f"Mission content {i}"
+    #     }
+
+    #     vc = create_vc(issuer_did, subject_did, payload, issuer_private)
+    #     vc_id = vc["id"]
+
+    #     # 노드 및 관계 삽입
+    #     cur.execute(f"""
+    #         CREATE (:Issuer {{did: '{issuer_did}'}});
+    #         CREATE (:Subject {{did: '{subject_did}'}});
+    #         CREATE (:VC {{vc_id: '{vc_id}', vc_json: '{json.dumps(vc).replace("'", "''")}'}});
+    #         MATCH (i:Issuer), (v:VC) WHERE i.did = '{issuer_did}' AND v.vc_id = '{vc_id}'
+    #             CREATE (i)-[:ISSUED]->(v);
+    #         MATCH (s:Subject), (v:VC) WHERE s.did = '{subject_did}' AND v.vc_id = '{vc_id}'
+    #             CREATE (v)-[:ASSERTS]->(s);
+    #     """)
+    # 2025-04-30 modified by su.
+    # 고정된 키 불러오기
+    issuer_private = load_private_key(PRIVATE_KEY_PATH)
+    issuer_public  = load_public_key(PUBLIC_KEY_PATH)
+    issuer_did = "did:example:issuer"
+
+    inserted = 0
+    start = time.perf_counter()
+
     for i in range(config.num_mission):
-        issuer_did = generate_did()
-        subject_did = generate_did()
+        subject_did = create_did()
         payload = {
-            "mission_id": f"M{i:04}",
+            "mission_id": f"M{i:04d}",
             "content": f"Mission content {i}"
         }
 
         vc = create_vc(issuer_did, subject_did, payload, issuer_private)
         vc_id = vc["id"]
-
         # 노드 및 관계 삽입
         cur.execute(f"""
-            CREATE (:Issuer {{did: '{issuer_did}'}});
-            CREATE (:Subject {{did: '{subject_did}'}});
             CREATE (:VC {{vc_id: '{vc_id}', vc_json: '{json.dumps(vc).replace("'", "''")}'}});
-            MATCH (i:Issuer), (v:VC) WHERE i.did = '{issuer_did}' AND v.vc_id = '{vc_id}'
-                CREATE (i)-[:ISSUED]->(v);
-            MATCH (s:Subject), (v:VC) WHERE s.did = '{subject_did}' AND v.vc_id = '{vc_id}'
-                CREATE (v)-[:ASSERTS]->(s);
         """)
+            # CREATE (:Issuer {{did: '{issuer_did}'}});
+            # CREATE (:Subject {{did: '{subject_did}'}});
+            # MATCH (i:Issuer), (v:VC) WHERE i.did = '{issuer_did}' AND v.vc_id = '{vc_id}'
+            #     CREATE (i)-[:ISSUED]->(v);
+            # MATCH (s:Subject), (v:VC) WHERE s.did = '{subject_did}' AND v.vc_id = '{vc_id}'
+            #     CREATE (v)-[:ASSERTS]->(s);
 
+        # cur.execute("""
+        #     CREATE (:VC {vc_id: %s, issuer_did: %s, subject_did: %s, vc_json: %s});
+        # """, (vc_id, issuer_did, subject_did, json.dumps(vc).replace("'", "''")))
+
+        inserted += 1
+
+    
     conn.commit()
     insert_time = time.perf_counter() - insert_start
     print(f"[C-Test] Inserted {config.num_mission} VCs in {insert_time:.4f} seconds")
@@ -102,6 +143,7 @@ def run_test_case_c(config: TestConfig):
     }
 
 if __name__ == "__main__":
-    cfg = TestConfig("config/test_small.json")
+#    cfg = TestConfig("config/test_small.json")
+    cfg = TestConfig("config/test_large.json")
     result = run_test_case_c(cfg)
     print("[C-Test] Result:", result)
