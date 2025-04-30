@@ -1,0 +1,20 @@
+{
+    "test_name": "test_large",
+    "db_type": "postgres",
+    "test_case": "A",
+    "node_count": {
+      "mission": 1000,
+      "execution": 1000,
+      "verification": 1000
+    },
+    "random_seed": 123,
+    "db_config": {
+      "host": "localhost",
+      "port": 5433,
+      "dbname": "edge",
+      "user": "sam",
+      "password": "dooley"
+    },
+    "enable_random_binding": true,
+    "log_output_path": "data/results/test_large_log.json"
+  }

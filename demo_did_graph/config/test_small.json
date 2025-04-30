@@ -1,0 +1,21 @@
+{
+    "test_name": "test_small",
+    "db_type": "postgres",             
+    "test_case": "A",                  
+    "node_count": {
+      "mission": 10,
+      "execution": 10,
+      "verification": 10
+    },
+    "random_seed": 42,
+    "db_config": {
+      "host": "localhost",
+      "port": 5433,
+      "dbname": "edge",
+      "user": "sam",
+      "password": "dooley"
+    },
+    "enable_random_binding": true,
+    "log_output_path": "data/results/test_small_log.json"
+  }
+  
