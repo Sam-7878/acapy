@@ -3,9 +3,9 @@
     "db_type": "postgres",
     "test_case": "A",
     "node_count": {
-      "mission": 5000,
-      "execution": 5000,
-      "verification": 5000
+      "mission": 1000,
+      "execution": 1000,
+      "verification": 1000
     },
     "random_seed": 123,
     "db_config": {

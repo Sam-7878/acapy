@@ -19,12 +19,13 @@ PRIVATE_KEY_PATH = "common/keys/commander_private.pem"
 PUBLIC_KEY_PATH = "common/keys/commander_public.pem"
 
 def run_test_case_b(config: TestConfig):
-    print("[B-Test] Running DID + VC + PostgreSQL Test")
+    print("[B-Test] Running DID + VC + PostgreSQL (RDB) Test")
 
-    # Seed 고정 (재현 가능성 확보)
     random.seed(config.random_seed)
+    issuer_private = load_private_key(PRIVATE_KEY_PATH)
+    issuer_public = load_public_key(PUBLIC_KEY_PATH)
+    issuer_did = "did:example:issuer"
 
-    # DB 연결
     conn = psycopg.connect(
         host=config.db_host,
         port=config.db_port,
@@ -34,51 +35,41 @@ def run_test_case_b(config: TestConfig):
     )
     cur = conn.cursor()
 
-    # 테스트 테이블 초기화
+    # 테이블 초기화
     cur.execute("DROP TABLE IF EXISTS vc_test;")
+    cur.execute("DROP TABLE IF EXISTS did_issuer;")
+    cur.execute("DROP TABLE IF EXISTS did_subject;")
+    conn.commit()
+
+    cur.execute("""
+        CREATE TABLE did_issuer (
+            did TEXT PRIMARY KEY
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE did_subject (
+            did TEXT PRIMARY KEY
+        );
+    """)
     cur.execute("""
         CREATE TABLE vc_test (
             vc_id TEXT PRIMARY KEY,
-            issuer_did TEXT,
-            subject_did TEXT,
+            issuer_did TEXT REFERENCES did_issuer(did),
+            subject_did TEXT REFERENCES did_subject(did),
             vc_json JSONB
         );
     """)
     conn.commit()
 
-    # 키 쌍 생성 (명령자 역할)
-    #issuer_private, issuer_public = generate_key_pair()
-
-    insert_start = time.perf_counter()
-
-    # VC 생성 및 삽입
-    # for i in range(config.num_mission):
-    #     issuer_did = generate_did()
-    #     subject_did = generate_did()
-    #     payload = {
-    #         "mission_id": f"M{i:04}",
-    #         "content": f"Mission content {i}"
-    #     }
-
-    #     vc = create_vc(issuer_did, subject_did, payload, issuer_private)
-    #     vc_id = vc["id"]
-
-    #     cur.execute(
-    #         "INSERT INTO vc_test (vc_id, issuer_did, subject_did, vc_json) VALUES (%s, %s, %s, %s)",
-    #         (vc_id, issuer_did, subject_did, json.dumps(vc))
-    #     )
-
-    # 2025-04-30 modified by su.
-    # 고정된 키 불러오기
-    issuer_private = load_private_key(PRIVATE_KEY_PATH)
-    issuer_public  = load_public_key(PUBLIC_KEY_PATH)
-    issuer_did = "did:example:issuer"
+    cur.execute("INSERT INTO did_issuer (did) VALUES (%s)", (issuer_did,))
 
     inserted = 0
-    start = time.perf_counter()
+    insert_start = time.perf_counter()
 
     for i in range(config.num_mission):
         subject_did = create_did()
+        cur.execute("INSERT INTO did_subject (did) VALUES (%s)", (subject_did,))
+
         payload = {
             "mission_id": f"M{i:04d}",
             "content": f"Mission content {i}"
@@ -124,7 +115,8 @@ def run_test_case_b(config: TestConfig):
     }
 
 if __name__ == "__main__":
-#    cfg = TestConfig("config/test_small.json")
+    #cfg = TestConfig("config/test_small.json")
     cfg = TestConfig("config/test_large.json")
+    
     result = run_test_case_b(cfg)
     print("[B-Test] Result:", result)

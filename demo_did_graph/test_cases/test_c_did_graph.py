@@ -57,27 +57,7 @@ def run_test_case_c(config: TestConfig):
 
     insert_start = time.perf_counter()
 
-    # for i in range(config.num_mission):
-    #     issuer_did = generate_did()
-    #     subject_did = generate_did()
-    #     payload = {
-    #         "mission_id": f"M{i:04}",
-    #         "content": f"Mission content {i}"
-    #     }
 
-    #     vc = create_vc(issuer_did, subject_did, payload, issuer_private)
-    #     vc_id = vc["id"]
-
-    #     # 노드 및 관계 삽입
-    #     cur.execute(f"""
-    #         CREATE (:Issuer {{did: '{issuer_did}'}});
-    #         CREATE (:Subject {{did: '{subject_did}'}});
-    #         CREATE (:VC {{vc_id: '{vc_id}', vc_json: '{json.dumps(vc).replace("'", "''")}'}});
-    #         MATCH (i:Issuer), (v:VC) WHERE i.did = '{issuer_did}' AND v.vc_id = '{vc_id}'
-    #             CREATE (i)-[:ISSUED]->(v);
-    #         MATCH (s:Subject), (v:VC) WHERE s.did = '{subject_did}' AND v.vc_id = '{vc_id}'
-    #             CREATE (v)-[:ASSERTS]->(s);
-    #     """)
     # 2025-04-30 modified by su.
     # 고정된 키 불러오기
     issuer_private = load_private_key(PRIVATE_KEY_PATH)
@@ -87,8 +67,13 @@ def run_test_case_c(config: TestConfig):
     inserted = 0
     start = time.perf_counter()
 
+    # for 루프 밖에서 Issuer 노드 생성
+    cur.execute(f"CREATE (:Issuer {{did: '{issuer_did}'}});")
+
+    # 루프 안에서는 중복 INSERT 방지 또는 존재 여부 확인 후 관계만 생성:
     for i in range(config.num_mission):
         subject_did = create_did()
+        #subject_did = 'did:example:subject1'
         payload = {
             "mission_id": f"M{i:04d}",
             "content": f"Mission content {i}"
@@ -98,10 +83,18 @@ def run_test_case_c(config: TestConfig):
         vc_id = vc["id"]
         # 노드 및 관계 삽입
         cur.execute(f"""
+            CREATE (:Subject {{did: '{subject_did}'}});
+
             CREATE (:VC {{vc_id: '{vc_id}', vc_json: '{json.dumps(vc).replace("'", "''")}'}});
+            
+            MATCH (i:Issuer), (v:VC)
+            WHERE i.did = '{issuer_did}' AND v.vc_id = '{vc_id}'
+            CREATE (i)-[:ISSUED]->(v);
+            
+            MATCH (s:Subject), (v:VC)
+            WHERE s.did = '{subject_did}' AND v.vc_id = '{vc_id}'
+            CREATE (v)-[:ASSERTS]->(s);
         """)
-            # CREATE (:Issuer {{did: '{issuer_did}'}});
-            # CREATE (:Subject {{did: '{subject_did}'}});
             # MATCH (i:Issuer), (v:VC) WHERE i.did = '{issuer_did}' AND v.vc_id = '{vc_id}'
             #     CREATE (i)-[:ISSUED]->(v);
             # MATCH (s:Subject), (v:VC) WHERE s.did = '{subject_did}' AND v.vc_id = '{vc_id}'
@@ -143,7 +136,8 @@ def run_test_case_c(config: TestConfig):
     }
 
 if __name__ == "__main__":
-#    cfg = TestConfig("config/test_small.json")
+    #cfg = TestConfig("config/test_small.json")
     cfg = TestConfig("config/test_large.json")
+    
     result = run_test_case_c(cfg)
     print("[C-Test] Result:", result)

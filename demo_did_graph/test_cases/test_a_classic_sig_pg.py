@@ -32,32 +32,55 @@ def run_test_case_a(config: TestConfig):
     )
     cur = conn.cursor()
 
-    # 테스트 테이블 초기화
+    # 기존 테이블 제거 및 생성
     cur.execute("DROP TABLE IF EXISTS mission_test;")
+    cur.execute("DROP TABLE IF EXISTS commander;")
+    cur.execute("DROP TABLE IF EXISTS executor;")
+    conn.commit()
+
+    cur.execute("""
+        CREATE TABLE commander (
+            cid TEXT PRIMARY KEY
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE executor (
+            eid TEXT PRIMARY KEY
+        );
+    """)
     cur.execute("""
         CREATE TABLE mission_test (
             mission_id TEXT PRIMARY KEY,
+            cid TEXT REFERENCES commander(cid),
+            eid TEXT REFERENCES executor(eid),
             payload TEXT,
             signature BYTEA
         );
     """)
     conn.commit()
 
-    # 노드 수만큼 명령 생성 및 서명 삽입
-    start_time = time.perf_counter()
+    insert_start = time.perf_counter()
+
+    commander_id = "commander_001"
+    cur.execute("INSERT INTO commander (cid) VALUES (%s)", (commander_id,))
 
     for i in range(config.num_mission):
-        mission_id = f"M{i:04}"
+        mission_id = f"M{i:04d}"
+        executor_id = f"exec_{i:04d}"
         payload = f"Mission payload {i}"
         signature = sign_data(priv_key, payload)
 
-        cur.execute(
-            "INSERT INTO mission_test (mission_id, payload, signature) VALUES (%s, %s, %s)",
-            (mission_id, payload, signature)
-        )
+        # 수행자 등록
+        cur.execute("INSERT INTO executor (eid) VALUES (%s) ON CONFLICT DO NOTHING", (executor_id,))
+        
+        # 명령 저장
+        cur.execute("""
+            INSERT INTO mission_test (mission_id, cid, eid, payload, signature)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (mission_id, commander_id, executor_id, payload, signature))
 
     conn.commit()
-    insert_time = time.perf_counter() - start_time
+    insert_time = time.perf_counter() - insert_start
 
     print(f"[A-Test] Inserted {config.num_mission} missions in {insert_time:.4f} seconds")
 
@@ -88,7 +111,8 @@ def run_test_case_a(config: TestConfig):
 
 # 단독 실행 테스트
 if __name__ == "__main__":
-#    cfg = TestConfig("config/test_small.json")
+    #cfg = TestConfig("config/test_small.json")
     cfg = TestConfig("config/test_large.json")
+    
     result = run_test_case_a(cfg)
     print("[A-Test] Result:", result)
