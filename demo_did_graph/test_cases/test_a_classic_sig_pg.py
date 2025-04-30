@@ -88,6 +88,7 @@ def run_test_case_a(config: TestConfig):
 
 # 단독 실행 테스트
 if __name__ == "__main__":
-    cfg = TestConfig("config/test_small.json")
+#    cfg = TestConfig("config/test_small.json")
+    cfg = TestConfig("config/test_large.json")
     result = run_test_case_a(cfg)
     print("[A-Test] Result:", result)

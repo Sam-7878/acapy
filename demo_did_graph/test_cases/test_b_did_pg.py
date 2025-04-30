@@ -2,6 +2,8 @@
 
 import time
 import psycopg
+import json
+import random
 
 from pathlib import Path
 import sys, os
@@ -9,8 +11,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 # === 모듈 임포트 ===
 from common.load_config import TestConfig
 from common.did_utils import generate_did, generate_key_pair, create_vc, verify_vc
-import json
-import random
+
 
 def run_test_case_b(config: TestConfig):
     print("[B-Test] Running DID + VC + PostgreSQL Test")
