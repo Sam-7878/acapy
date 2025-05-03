@@ -1,20 +1,32 @@
 {
-    "test_name": "test_large",
-    "db_type": "postgres",
-    "test_case": "A",
-    "node_count": {
-      "mission": 1000,
-      "execution": 1000,
-      "verification": 1000
-    },
-    "random_seed": 123,
-    "db_config": {
-      "host": "localhost",
-      "port": 5433,
-      "dbname": "edge",
-      "user": "sam",
-      "password": "dooley"
-    },
-    "enable_random_binding": true,
-    "log_output_path": "data/results/test_large_log.json"
+  "test_name": "test_large",
+  "db_type": "postgres",
+  "test_case": "C",
+  "node_count": {
+    "mission": 1000,
+    "execution": 1000,
+    "verification": 1000
+  },
+  "random_seed": 123,
+  "db_config": {
+    "host": "localhost",
+    "port": 5433,
+    "dbname": "edge",
+    "user": "sam",
+    "password": "dooley"
+  },
+  "enable_random_binding": true,
+  "log_output_path": "data/results/test_large_log.json",
+
+  "scenario_parameters": {
+    "HQ_ID": "HQ1",
+    "REGIONAL_COUNT": 100,
+    "UNIT_COUNT": 200,
+    "SQUAD_COUNT": 500,
+    "DRONES_PER_SQUAD": 5,
+    "scale_up_nodes": [100000, 500000, 1000000],
+    "depths": [4, 8, 12, 16],
+    "topology_event_rate_per_minute": 100,
+    "verifier_counts": [10, 50, 100]
   }
+}
