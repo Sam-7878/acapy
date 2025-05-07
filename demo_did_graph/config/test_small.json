@@ -7,13 +7,16 @@
     "password": "dooley"
   },
   "node_count": {
-    "drone": 10000,
-    "mission": 1000,
-    "execution": 1000,
-    "verification": 1000
+    "drone": 1000,
+    "mission": 100,
+    "execution": 100,
+    "verification": 100
   },
   "headquarters_id": "HQ",
   "private_key_path": "common/keys/commander_private.pem",
+  "scale_up_nodes": [100, 500, 1000],
+  "depths": [2, 4, 6, 8],
+  "iterations": 10,
   "scenario_params": {
     "1": {
       "turn_taking": {
