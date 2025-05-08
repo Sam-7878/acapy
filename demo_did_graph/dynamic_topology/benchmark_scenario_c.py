@@ -16,6 +16,8 @@ import sys, os
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 from common.load_config import TestConfig
+from common.bench_utils import benchmark_query
+
 
 # ─────────────────────────────────────────────────────────
 # 1) Cypher 쿼리 생성 함수
@@ -31,27 +33,27 @@ RETURN count(v) AS vc_count;
 # ─────────────────────────────────────────────────────────
 # 2) 벤치마크 실행 함수
 # ─────────────────────────────────────────────────────────
-def benchmark_query(cur, query: str, iterations: int):
-    latencies = []
-    # 워밍업
-    cur.execute(query)
-    cur.fetchone()
+# def benchmark_query(cur, query: str, iterations: int):
+#     latencies = []
+#     # 워밍업
+#     cur.execute(query)
+#     cur.fetchone()
 
-    # 반복 실행
-    start_all = time.perf_counter()
-    for _ in range(iterations):
-        t0 = time.perf_counter()
-        cur.execute(query)
-        _ = cur.fetchone()[0]
-        latencies.append(time.perf_counter() - t0)
-    elapsed_all = time.perf_counter() - start_all
+#     # 반복 실행
+#     start_all = time.perf_counter()
+#     for _ in range(iterations):
+#         t0 = time.perf_counter()
+#         cur.execute(query)
+#         _ = cur.fetchone()[0]
+#         latencies.append(time.perf_counter() - t0)
+#     elapsed_all = time.perf_counter() - start_all
 
-    # 통계 계산
-    p50 = statistics.quantiles(latencies, n=100)[49]
-    p95 = statistics.quantiles(latencies, n=100)[94]
-    p99 = statistics.quantiles(latencies, n=100)[98]
-    tps = iterations / elapsed_all
-    return p50, p95, p99, tps
+#     # 통계 계산
+#     p50 = statistics.quantiles(latencies, n=100)[49]
+#     p95 = statistics.quantiles(latencies, n=100)[94]
+#     p99 = statistics.quantiles(latencies, n=100)[98]
+#     tps = iterations / elapsed_all
+#     return p50, p95, p99, tps
 
 # ─────────────────────────────────────────────────────────
 # 3) Scenario별 워크로드 함수
