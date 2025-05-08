@@ -1,171 +1,159 @@
+#!/usr/bin/env python3
 # setup_scenario_b.py
 
+"""
+Scenario B 환경 설정 스크립트
+  - DID 인증 + RDB 기반
+  - 시나리오 1, 2, 3(동적 네트워크 변화) 적용 준비
+Usage:
+  python setup_scenario_b.py --config config/test_large.json --scenario {1,2,3}
+"""
+
 import time
-import random
 import json
+import random
+import argparse
+from pathlib import Path
 import psycopg
 from psycopg import Binary
+import sys
 
-import sys, os
-from pathlib import Path
-# 프로젝트 루트 경로를 PYTHONPATH에 추가하여 common 모듈 로드 지원
+# 프로젝트 루트를 PYTHONPATH에 추가 (common 모듈 로드용)
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
-
 from common.load_config import TestConfig
 from common.did_utils import load_private_key, create_did, create_vc
 
-# ─────────────────────────────────────────────────────────
-# 설정
-# ─────────────────────────────────────────────────────────
-CONFIG_PATH       = "config/test_small.json"  # 또는 test_large.json 사용 가능
-HQ_ID             = "HQ1"
-REGIONAL_COUNT    = 100
-UNIT_COUNT        = 200
-SQUAD_COUNT       = 500
-DRONES_PER_SQUAD  = 5
 
-# ─────────────────────────────────────────────────────────
-# DB 연결
-# ─────────────────────────────────────────────────────────
-cfg = TestConfig(CONFIG_PATH)
-random.seed(cfg.random_seed)
-conn = psycopg.connect(
-    host=cfg.db_host,
-    port=cfg.db_port,
-    dbname=cfg.db_name,
-    user=cfg.db_user,
-    password=cfg.db_password
-)
-cur = conn.cursor()
+def parse_args():
+    parser = argparse.ArgumentParser(description="Setup Scenario B environment with dynamic network scenarios.")
+    parser.add_argument('--config', '-c', required=True,
+                        help='Path to JSON config file (e.g., config/test_large.json)')
+    parser.add_argument('--scenario', '-s', required=True, choices=['1', '2', '3'],
+                        help='Dynamic scenario number: 1=Real-Time Turn-Taking, 2=Chain-Churn, 3=Partition & Reconciliation')
+    return parser.parse_args()
 
-# ─────────────────────────────────────────────────────────
-# 스키마 초기화
-# ─────────────────────────────────────────────────────────
-cur.execute("DROP TABLE IF EXISTS vc_test;")
-cur.execute("DROP TABLE IF EXISTS did_subject;")
-cur.execute("DROP TABLE IF EXISTS did_issuer;")
-cur.execute("DROP TABLE IF EXISTS delegation_relation;")
-cur.execute("DROP TABLE IF EXISTS hq;")
-conn.commit()
 
-cur.execute("""
-CREATE TABLE hq (
-  id TEXT PRIMARY KEY
-);
-""")
-cur.execute("""
-CREATE TABLE delegation_relation (
-  parent_id  TEXT NOT NULL,
-  child_id   TEXT NOT NULL,
-  child_type TEXT NOT NULL,
-  PRIMARY KEY(parent_id, child_id)
-);
-""")
-cur.execute("""
-CREATE TABLE did_issuer (
-  did TEXT PRIMARY KEY
-);
-""")
-cur.execute("""
-CREATE TABLE did_subject (
-  did TEXT PRIMARY KEY
-);
-""")
-cur.execute("""
-CREATE TABLE vc_test (
-  vc_id       TEXT PRIMARY KEY,
-  issuer_did  TEXT REFERENCES did_issuer(did),
-  subject_did TEXT REFERENCES did_subject(did),
-  vc_json     JSONB NOT NULL
-);
-""")
-conn.commit()
+def setup_database(cfg: TestConfig, private_key, scenario: int):
+    conn = psycopg.connect(**cfg.db_params)
+    cur = conn.cursor()
 
-# ─────────────────────────────────────────────────────────
-# HQ, Issuer 등록
-# ─────────────────────────────────────────────────────────
-cur.execute("INSERT INTO hq (id) VALUES (%s) ON CONFLICT DO NOTHING;", (HQ_ID,))
-issuer_did = f"did:example:{HQ_ID}"
-cur.execute("INSERT INTO did_issuer (did) VALUES (%s) ON CONFLICT DO NOTHING;", (issuer_did,))
-conn.commit()
+    # 1) 테이블 생성 (없으면) 및 스키마 업그레이드
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS did_issuer (
+      did TEXT PRIMARY KEY
+    );
+    """)
+    # public_key 컬럼이 없으면 추가 (기존 데이터를 유지하면서)
+    cur.execute("""
+    ALTER TABLE did_issuer
+      ADD COLUMN IF NOT EXISTS public_key JSON NOT NULL
+        DEFAULT '{}'::JSON;
+    """)
+    conn.commit()
 
-# ─────────────────────────────────────────────────────────
-# 계층 네트워크 생성: Regionals, Units, Squads, Drones
-# ─────────────────────────────────────────────────────────
-start = time.perf_counter()
+    # (1) DDL: ensure did_subject exists
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS did_subject (
+    did TEXT PRIMARY KEY,
+    public_key JSON NOT NULL
+    );
+    """)
+    # public_key 컬럼이 없으면 추가 (기존 데이터를 유지하면서)
+    cur.execute("""
+    ALTER TABLE did_subject
+      ADD COLUMN IF NOT EXISTS public_key JSON NOT NULL
+        DEFAULT '{}'::JSON;
+    """)
+    conn.commit()
 
-# Regionals
-regionals = [f"R{i:03d}" for i in range(1, REGIONAL_COUNT+1)]
-for rid in regionals:
-    cur.execute(
-        "INSERT INTO delegation_relation (parent_id, child_id, child_type) VALUES (%s, %s, %s)",
-        (HQ_ID, rid, "Regional")
-    )
+    print("› DID 및 VC 테이블 생성 또는 확인 완료")
 
-# Units
-units = [f"U{i:04d}" for i in range(1, UNIT_COUNT+1)]
-for idx, uid in enumerate(units):
-    parent = regionals[idx % REGIONAL_COUNT]
-    cur.execute(
-        "INSERT INTO delegation_relation (parent_id, child_id, child_type) VALUES (%s, %s, %s)",
-        (parent, uid, "Unit")
-    )
 
-# Squads
-squads = [f"S{i:05d}" for i in range(1, SQUAD_COUNT+1)]
-for idx, sid in enumerate(squads):
-    parent = units[idx % UNIT_COUNT]
-    cur.execute(
-        "INSERT INTO delegation_relation (parent_id, child_id, child_type) VALUES (%s, %s, %s)",
-        (parent, sid, "Squad")
-    )
+    # 2) 테이블 초기화 (외래키 참조를 고려하여 한 번에 TRUNCATE)
+    cur.execute("TRUNCATE TABLE did_issuer, vc_test;")
+    conn.commit()
+    print(f"› did_issuer, vc_test 테이블 초기화 완료 (scenario {scenario})")
 
-# Drones
-# 각 Squad당 DRONES_PER_SQUAD대 생성
-drones = []
-for idx, sid in enumerate(squads):
-    for j in range(1, DRONES_PER_SQUAD+1):
-        did = f"D{idx:05d}_{j:02d}"
-        drones.append(did)
+
+    # 3) DID 생성 및 삽입
+    start = time.perf_counter()
+    for _ in range(cfg.num_drones):
+        # create_did()는 문자열 반환
+        did = create_did()
+        # public_key 정보가 필요하면 private_key에서 추출하도록 구현하세요
+        public_key_dict = {}
         cur.execute(
-            "INSERT INTO delegation_relation (parent_id, child_id, child_type) VALUES (%s, %s, %s)",
-            (sid, did, "Drone")
+            "INSERT INTO did_issuer (did, public_key) VALUES (%s, %s) ON CONFLICT DO NOTHING;",
+            (did, json.dumps(public_key_dict))
+        )
+        # **also** insert as a subject
+        cur.execute(
+        "INSERT INTO did_subject (did, public_key) VALUES (%s, %s) ON CONFLICT DO NOTHING;",
+        (did, json.dumps(public_key_dict))
         )
 
-conn.commit()
-elapsed_net = time.perf_counter() - start
-print(f"› 네트워크 생성 완료: Regionals({len(regionals)}), Units({len(units)}), Squads({len(squads)}), Drones({len(drones)}) in {elapsed_net:.2f}s")
+    conn.commit()
+    print(f"› DID 삽입 완료: {cfg.num_drones}건 in {time.perf_counter() - start:.2f}s")
 
-# ─────────────────────────────────────────────────────────
-# VC 생성 및 삽입
-# ─────────────────────────────────────────────────────────
-priv_key = load_private_key("common/keys/commander_private.pem")
-start_vc = time.perf_counter()
 
-for idx, drone_id in enumerate(drones):
-    subject_did = create_did()
-    cur.execute("INSERT INTO did_subject (did) VALUES (%s) ON CONFLICT DO NOTHING;", (subject_did,))
+    # 4) VC 생성 및 삽입
+    priv_key = load_private_key("common/keys/commander_private.pem")
+    start2 = time.perf_counter()
+    cur.execute("SELECT did FROM did_issuer;")
+    all_dids = [r[0] for r in cur.fetchall()]
+    for i in range(cfg.num_mission):
+        issuer = random.choice(all_dids)
+        subject = random.choice(all_dids)
+        vc_doc = create_vc(issuer, subject, {"mission": i}, priv_key)
+        cur.execute(
+            "INSERT INTO vc_test (vc_id, issuer_did, subject_did, vc_json) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;",
+            (vc_doc['id'], issuer, subject, json.dumps(vc_doc))
+        )
+    conn.commit()
+    print(f"› VC 삽입 완료: {cfg.num_mission}건 in {time.perf_counter() - start2:.2f}s")
 
-    payload = {
-        "mission_id": f"M{idx:06d}",
-        "drone_id": drone_id
-    }
-    vc = create_vc(issuer_did, subject_did, payload, priv_key)
-    vc_json_str = json.dumps(vc)
 
-    cur.execute(
-        "INSERT INTO vc_test (vc_id, issuer_did, subject_did, vc_json) VALUES (%s, %s, %s, %s)",
-        (vc["id"], issuer_did, subject_did, vc_json_str)
-    )
 
-conn.commit()
-elapsed_vc = time.perf_counter() - start_vc
-print(f"› VC 생성 및 삽입 완료: {len(drones)}건 in {elapsed_vc:.2f}s")
+    # 두 번째 VC 생성 루프: 반드시 did_issuer에서 DID를 가져와야 외래키 제약을 만족합니다
+    start_vc2 = time.perf_counter()
+    # did_issuer 에서 다시 한 번 전체 DID 목록을 가져옵니다
+    cur.execute("SELECT did FROM did_issuer;")
+    all_dids = [row[0] for row in cur.fetchall()]
 
-# ─────────────────────────────────────────────────────────
-# 정리
-# ─────────────────────────────────────────────────────────
-cur.close()
-conn.close()
-print("Scenario B 환경 설정 완료.")
+    vc_count2 = 0
+    for i in range(cfg.num_mission):
+        issuer2 = random.choice(all_dids)
+        subject2 = random.choice(all_dids)
+        # create_vc 호출도 키워드 인자로 확실히 맞춰주세요
+        vc_doc2 = create_vc(
+            issuer_did=issuer2,
+            subject_did=subject2,
+            data={"mission": i},
+            private_key=private_key
+        )
+        cur.execute(
+            "INSERT INTO vc_test (vc_id, issuer_did, subject_did, vc_json) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;",
+            (vc_doc2["id"], issuer2, subject2, json.dumps(vc_doc2))
+        )
+        vc_count2 += 1
+    conn.commit()
+    print(f"› 두 번째 VC 생성 및 삽입 완료: {vc_count2}건 in {time.perf_counter() - start_vc2:.2f}s")
+
+
+
+
+    # 5) 시나리오별 안내
+    print(f"› Scenario B-{scenario} 데이터 로드 완료: DID 및 VC 준비 완료")
+
+    # 정리
+    cur.close()
+    conn.close()
+    print(f"Scenario B 환경 설정 완료 (scenario {scenario}).")
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    cfg = TestConfig(args.config)
+    private_key = load_private_key(cfg.private_key_path)
+    setup_database(cfg, private_key, int(args.scenario))

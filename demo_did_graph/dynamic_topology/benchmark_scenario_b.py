@@ -1,10 +1,14 @@
+#!/usr/bin/env python3
 # benchmark_scenario_b.py
-# Scenario B Benchmark: DID + VC + PostgreSQL RDB (Multi-Scale, Multi-Depth)
+# Scenario B Dynamic Topology Benchmark: DID + VC + PostgreSQL RDB
 
 import time
 import psycopg
 import statistics
 import json
+import random
+import argparse
+import csv
 from pathlib import Path
 import sys, os
 
@@ -12,98 +16,143 @@ import sys, os
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 from common.load_config import TestConfig
+from common.bench_utils import get_bench_query, benchmark_query
 
 # ─────────────────────────────────────────────────────────
-# 1) 설정 파일 로드
+# Scenario별 워크로드 함수 정의
 # ─────────────────────────────────────────────────────────
-CONFIG_JSON = ROOT / "config" / "test_large.json"
-with open(CONFIG_JSON, 'r') as f:
-    cfg_raw = json.load(f)
-# 기존 TestConfig로 DB 정보만 로드
-cfg = TestConfig(str(CONFIG_JSON))
-# 시나리오 파라미터
-sp = cfg_raw.get("scenario_parameters", {})
-HQ_ID            = sp.get("HQ_ID", "HQ1")
-DEPTHS           = sp.get("depths", [4])
-SCALE_UP_NODES   = sp.get("scale_up_nodes", [])
-ITERATIONS       = sp.get("iterations", 200)
 
-# ─────────────────────────────────────────────────────────
-# 2) DB 연결
-# ─────────────────────────────────────────────────────────
-conn = psycopg.connect(
-    host=cfg.db_host,
-    port=cfg.db_port,
-    dbname=cfg.db_name,
-    user=cfg.db_user,
-    password=cfg.db_password
-)
-cur = conn.cursor()
+def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterations, rows):
+    interval = params['turn_taking']['interval_sec']
+    ratio = params['turn_taking']['update_ratio']
+    for total in nodes:
+        print(f"\n-- Scale-up: {total} nodes (Turn-Taking) --")
+        for depth in depths:
+            update_count = int(cfg.num_drones * ratio)
+            drones = random.sample(range(cfg.num_drones), update_count)
+            for did in drones:
+                cur.execute(
+                    "UPDATE delegation SET hq_id = %s WHERE drone_id = %s",
+                    (cfg.headquarters_id, did)
+                )
+            conn.commit()
+            time.sleep(interval)
+            query = get_bench_query(cfg.headquarters_id, depth)
+            p50, p95, p99, tps = benchmark_query(cur, query, iterations)
+            print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
+            rows.append({
+                'scenario': 'B-1',
+                'scale_up': total,
+                'depth': depth,
+                'p50_ms': p50*1000,
+                'p95_ms': p95*1000,
+                'p99_ms': p99*1000,
+                'tps': tps
+            })
 
-# ─────────────────────────────────────────────────────────
-# 3) 재귀 CTE 벤치마크 쿼리 생성
-# ─────────────────────────────────────────────────────────
-def get_bench_query(hq_id: str, max_depth: int) -> str:
-    return f"""
-WITH RECURSIVE delegation(node_id, role, depth) AS (
-  SELECT id AS node_id, 'HQ' AS role, 0 AS depth
-    FROM hq
-   WHERE id = '{hq_id}'
-  UNION ALL
-  SELECT r.child_id, r.child_type, d.depth + 1
-    FROM delegation d
-    JOIN delegation_relation r
-      ON r.parent_id = d.node_id
-   WHERE d.depth < {max_depth}
-)
-SELECT count(v.vc_id) AS vc_count
-  FROM delegation del
-  JOIN vc_test v
-    ON v.subject_did = del.node_id
- WHERE del.role = 'Drone';
-"""
 
-# ─────────────────────────────────────────────────────────
-# 4) 벤치마크 함수
-# ─────────────────────────────────────────────────────────
-def benchmark_query(query: str, iterations: int):
-    latencies = []
-    # 워밍업
-    cur.execute(query)
-    cur.fetchone()
+def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, rows):
+    cycle = params['chain_churn']['depth_cycle']
+    interval = params['chain_churn']['cycle_interval_sec']
+    ratio = params['chain_churn']['update_ratio']
+    for depth in cycle:
+        print(f"\n-- Chain-Churn: depth={depth} --")
+        update_count = int(cfg.num_drones * ratio)
+        drones = random.sample(range(cfg.num_drones), update_count)
+        for did in drones:
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = %s",
+                (cfg.headquarters_id, did)
+            )
+        conn.commit()
+        time.sleep(interval)
+        query = get_bench_query(cfg.headquarters_id, depth)
+        p50, p95, p99, tps = benchmark_query(cur, query, iterations)
+        print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
+        rows.append({
+            'scenario': 'B-2',
+            'scale_up': '',
+            'depth': depth,
+            'p50_ms': p50*1000,
+            'p95_ms': p95*1000,
+            'p99_ms': p99*1000,
+            'tps': tps
+        })
 
-    # 반복 실행
-    start_all = time.perf_counter()
-    for _ in range(iterations):
-        t0 = time.perf_counter()
-        cur.execute(query)
-        _ = cur.fetchone()[0]
-        latencies.append(time.perf_counter() - t0)
-    elapsed_all = time.perf_counter() - start_all
 
-    # 통계 계산
-    p50 = statistics.quantiles(latencies, n=100)[49]
-    p95 = statistics.quantiles(latencies, n=100)[94]
-    p99 = statistics.quantiles(latencies, n=100)[98]
-    tps = iterations / elapsed_all
-    return p50, p95, p99, tps
+def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, iterations, rows):
+    split = params['partition_reconciliation']['split_ratio']
+    split_duration = params['partition_reconciliation']['split_duration_sec']
+    recon_sync = params['partition_reconciliation']['post_reconcile_sync_requests']
+    total = cfg.num_drones
+    boundary = int(total * split[0])
+    print(f"\n-- Partition: A={boundary}, B={total-boundary}, duration={split_duration}s --")
+    start = time.time()
+    while time.time() - start < split_duration:
+        for did in range(boundary):
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = %s",
+                (cfg.headquarters_id, did)
+            )
+        for did in range(boundary, total):
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = %s",
+                (cfg.headquarters_id, did)
+            )
+        conn.commit()
+    print(f"Partition 해제, 동기화 {recon_sync}건 --")
+    query = get_bench_query(cfg.headquarters_id, depths[0])
+    p50, p95, p99, tps = benchmark_query(cur, query, recon_sync)
+    print(f"Reconciliation → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
+    rows.append({
+        'scenario': 'B-3',
+        'scale_up': total,
+        'depth': depths[0],
+        'p50_ms': p50*1000,
+        'p95_ms': p95*1000,
+        'p99_ms': p99*1000,
+        'tps': tps
+    })
 
-# ─────────────────────────────────────────────────────────
-# 5) 메인 실행 흐름
-# ─────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    print("=== Scenario B Multi-Scale Benchmark ===")
-    for total_nodes in SCALE_UP_NODES:
-        print(f"\n-- Scale-up: {total_nodes} nodes --")
-        # DB에 해당 total_nodes로 로드된 상태여야 합니다.
-        for depth in DEPTHS:
-            print(f"Depth: {depth}")
-            query = get_bench_query(HQ_ID, depth)
-            p50, p95, p99, tps = benchmark_query(query, ITERATIONS)
-            print(f"P50 latency : {p50*1000:.2f} ms")
-            print(f"P95 latency : {p95*1000:.2f} ms")
-            print(f"P99 latency : {p99*1000:.2f} ms")
-            print(f"Throughput  : {tps:.2f} qps")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Scenario B Dynamic Topology Benchmark")
+    parser.add_argument('-c', '--config', required=True, help='Path to config JSON')
+    parser.add_argument('-s', '--scenario', required=True, choices=['1', '2', '3'], help='Scenario number')
+    args = parser.parse_args()
+
+    cfg = TestConfig(args.config)
+    with open(args.config) as f:
+        cfg_json = json.load(f)
+
+    scale_up_nodes = cfg_json.get('scale_up_nodes', [])
+    depths = cfg_json.get('depths', [])
+    iterations = cfg_json.get('iterations', 1000)
+    params = cfg.scenario_params.get(args.scenario, {})
+
+    conn = psycopg.connect(**cfg.db_params)
+    cur = conn.cursor()
+
+    rows = []
+    if args.scenario == '1':
+        print("=== Running Scenario B-1: Real-Time Turn-Taking ===")
+        scenario1_realtime_turntaking(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows)
+    elif args.scenario == '2':
+        print("=== Running Scenario B-2: Chain-Churn ===")
+        scenario2_chain_churn(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows)
+    else:
+        print("=== Running Scenario B-3: Partition & Reconciliation ===")
+        scenario3_partition_reconciliation(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows)
+
+    result_dir = Path(ROOT) / 'data' / 'result'
+    result_dir.mkdir(parents=True, exist_ok=True)
+    output_file = result_dir / f"B_{args.scenario}_results.csv"
+    with open(output_file, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile,
+                                fieldnames=['scenario','scale_up','depth','p50_ms','p95_ms','p99_ms','tps'])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    print(f"Results written to {output_file}")
 
     cur.close()
     conn.close()
