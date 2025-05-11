@@ -31,9 +31,16 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
             # Delegation 업데이트
             update_count = int(cfg.num_drones * ratio)
             drones = random.sample(range(cfg.num_drones), update_count)
-            for did in drones:
-                cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
+
+            # for did in drones:
+            #     cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
+            # 배치 업데이트: drone_id 목록을 한 번에 처리
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                (cfg.headquarters_id, drones)
+            )
             conn.commit()
+
             time.sleep(interval)
             # 성능 측정
             query = get_bench_query(cfg.headquarters_id, depth)
@@ -54,9 +61,16 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
         print(f"\n-- Chain-Churn: depth={depth} --")
         update_count = int(cfg.num_drones * ratio)
         drones = random.sample(range(cfg.num_drones), update_count)
-        for did in drones:
-            cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
+
+        # for did in drones:
+        #     cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
+        # 배치 업데이트
+        cur.execute(
+            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+            (cfg.headquarters_id, drones)
+        )
         conn.commit()
+
         time.sleep(interval)
         query = get_bench_query(cfg.headquarters_id, depth)
         p50, p95, p99, tps = benchmark_query(cur, query, iterations)
@@ -75,12 +89,27 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
     boundary = int(total * split[0])
     print(f"\n-- Partition: A={boundary}, B={total-boundary}, duration={split_dur}s --")
     start = time.time()
+
+    # while time.time() - start < split_dur:
+    #     for did in range(boundary):
+    #         cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
+    #     for did in range(boundary, total):
+    #         cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
+    #     conn.commit()
+    first  = list(range(boundary))
+    second = list(range(boundary, total))
+    # 파티션별 배치 업데이트
     while time.time() - start < split_dur:
-        for did in range(boundary):
-            cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
-        for did in range(boundary, total):
-            cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
+        cur.execute(
+            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+            (cfg.headquarters_id, first)
+        )
+        cur.execute(
+            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+            (cfg.headquarters_id, second)
+        )
         conn.commit()
+
     # 재결합 및 동기화
     num_sync = params['partition_reconciliation']['post_reconcile_sync_requests']
     print(f"Partition 해제, 동기화 {num_sync}건, duration={recon_dur}s --")
@@ -114,6 +143,9 @@ if __name__ == '__main__':
     # DB 연결
     conn = psycopg.connect(**cfg.db_params)
     cur = conn.cursor()
+    # 커밋 동기화(off) 설정: COMMIT 시 디스크 동기화 대기 없이 반환
+    cur.execute("SET synchronous_commit = OFF;")
+    print("› synchronous_commit OFF 설정 완료")
 
     # 결과 저장용 리스트
     rows = []

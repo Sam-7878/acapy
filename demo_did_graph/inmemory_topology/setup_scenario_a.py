@@ -48,16 +48,24 @@ def setup_database(cfg, private_key, scenario):
     inserted = 0
 
     # setup_database() 맨 위에 추가
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS delegation (
-        drone_id   INTEGER     PRIMARY KEY,
-        hq_id      TEXT        NOT NULL
-        );
-        """)
+    # cur.execute("""
+    #     CREATE TABLE IF NOT EXISTS delegation (
+    #     drone_id   INTEGER     PRIMARY KEY,
+    #     hq_id      TEXT        NOT NULL
+    #     );
+    #     """)
     conn.commit()
+    # delegation 테이블을 UNLOGGED로 생성해 WAL(write-ahead log) 기록을 건너뜁니다.
+    cur.execute("""
+        CREATE UNLOGGED TABLE IF NOT EXISTS delegation (
+          drone_id   INTEGER     PRIMARY KEY,
+          hq_id      TEXT        NOT NULL
+        );
+    """)    
     print("› delegation 테이블 생성 또는 확인 완료")
-    # 드론 노드와 HQ_ID를 기반으로 기본 delegation 엣지 삽입
 
+
+    # 드론 노드와 HQ_ID를 기반으로 기본 delegation 엣지 삽입
     for drone_id in range(cfg.num_drones):
         # 기본 위임: 모두 HQ_ID로 위임
         HQ_ID = cfg.headquarters_id
