@@ -48,20 +48,20 @@ def setup_database(cfg, private_key, scenario):
     inserted = 0
 
     # setup_database() 맨 위에 추가
-    # cur.execute("""
-    #     CREATE TABLE IF NOT EXISTS delegation (
-    #     drone_id   INTEGER     PRIMARY KEY,
-    #     hq_id      TEXT        NOT NULL
-    #     );
-    #     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS delegation (
+        drone_id   INTEGER     PRIMARY KEY,
+        hq_id      TEXT        NOT NULL
+        );
+        """)
     conn.commit()
     # delegation 테이블을 UNLOGGED로 생성해 WAL(write-ahead log) 기록을 건너뜁니다.
-    cur.execute("""
-        CREATE UNLOGGED TABLE IF NOT EXISTS delegation (
-          drone_id   INTEGER     PRIMARY KEY,
-          hq_id      TEXT        NOT NULL
-        );
-    """)    
+    # cur.execute("""
+    #     CREATE UNLOGGED TABLE IF NOT EXISTS delegation (
+    #       drone_id   INTEGER     PRIMARY KEY,
+    #       hq_id      TEXT        NOT NULL
+    #     );
+    # """)    
     print("› delegation 테이블 생성 또는 확인 완료")
 
 

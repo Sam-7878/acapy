@@ -40,14 +40,20 @@ def setup_database(cfg: TestConfig, private_key, scenario: int):
 
     # 1) 메모리 최적화된 delegation 테이블 생성
     cur.execute("DROP TABLE IF EXISTS delegation;")
+    # cur.execute("""
+    #     CREATE UNLOGGED TABLE delegation (
+    #     drone_id INTEGER PRIMARY KEY,
+    #     hq_id TEXT NOT NULL
+    #     );
+    # """)
     cur.execute("""
-        CREATE UNLOGGED TABLE delegation (
+        CREATE TABLE delegation (
         drone_id INTEGER PRIMARY KEY,
         hq_id TEXT NOT NULL
         );
     """)
     conn.commit()
-    print("› UNLOGGED delegation 테이블 생성 완료")
+    print("› delegation 테이블 생성 완료")
 
     # delegation 초기 데이터 로드
     start_deleg = time.perf_counter()

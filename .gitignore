@@ -15,8 +15,8 @@ demo_did_graph/*/*.json
 demo_did_graph/*.pem
 demo_did_graph/*/*.pem
 demo_did_graph/*.db
+demo_did_graph/*.csv
 demo_did_graph/*/*.csv
-demo_did_graph/*/*/*.csv
 
 
 # Byte-compiled / optimized / DLL files
