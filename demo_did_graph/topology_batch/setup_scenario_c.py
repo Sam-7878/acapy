@@ -97,9 +97,31 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
             cur.execute(f"CREATE (:Drone {{id:'{did}'}});")
             cur.execute(f"MATCH (s:Squad {{id:'{sid}'}}),(d:Drone {{id:'{did}'}}) CREATE (s)-[:DELEGATES]->(d);")
     conn.commit()
+    # print(f"› 네트워크 생성 완료: {len(regionals)}R, {len(units)}U, {len(squads)}S, {len(drones)}D in {time.perf_counter() - start_net:.2f}s")
+
     print(f"› 네트워크 생성 완료: {len(regionals)}R, {len(units)}U, {len(squads)}S, {len(drones)}D in {time.perf_counter() - start_net:.2f}s")
 
-    # 5) Issuer 및 VC 노드 삽입
+
+    # 5) Drone 노드의 초기 hqId 설정 (한 번에 배치 처리)
+    # cur.execute(
+    #     """
+    #     MATCH (d:Drone)
+    #     SET d.hqId = $hqId
+    #     """,
+    #     parameters={"hqId": HQ_ID}
+    # )
+    # 값 바인딩 없이 f-string으로 바로 삽입
+    cur.execute(f"""
+        MATCH (d:Drone)
+        SET d.hqId = '{HQ_ID}'
+    """)
+
+    conn.commit()
+    print(f"› Drone hqId 초기 설정 완료: {len(drones)}건 처리")
+
+
+
+    # 6) Issuer 및 VC 노드 삽입
     priv_key = load_private_key(cfg.private_key_path)
     issuer_did = f"did:example:{HQ_ID}"
     start_vc = time.perf_counter()
@@ -121,7 +143,10 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
     conn.commit()
     print(f"› VC 및 관계 삽입 완료: {len(drones)}건 in {time.perf_counter() - start_vc:.2f}s")
 
-    # 6) Scenario 완료 로깅
+
+
+
+    # 7) Scenario 완료 로깅
     print(f"› Scenario C-{scenario} 환경 설정 완료: DID/VC 및 Graph 준비 완료")
 
     cur.close()
