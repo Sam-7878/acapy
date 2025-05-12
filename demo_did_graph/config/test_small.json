@@ -14,6 +14,7 @@
   },
   "headquarters_id": "HQ",
   "private_key_path": "common/keys/commander_private.pem",
+  "data_result_path": "data/result/topology_batch",
   "scale_up_nodes": [100, 500, 1000],
   "depths": [2, 4, 6, 8],
   "iterations": 10,
@@ -24,30 +25,30 @@
         "update_ratio": 0.2
       },
       "network": {
-        "delay_ms_range": [50, 200],
+        "delay_ms_range": [20, 100],
         "packet_loss_rate": 0.01,
         "link_partition": {
-          "interval_sec": 60,
+          "interval_sec": 20,
           "drop_percent": 0.05,
-          "recover_after_sec": 10
+          "recover_after_sec": 3
         }
       }
     },
     "2": {
       "chain_churn": {
         "depth_cycle": [2, 4, 6, 8],
-        "cycle_interval_sec": 10,
+        "cycle_interval_sec": 3,
         "update_ratio": 0.1
       },
       "network": {
         "extra_delay_after_change_ms": 50,
-        "delay_duration_sec": 15,
+        "delay_duration_sec": 3,
         "loss_rate_during_change": 0.05
       }
     },
     "3": {
       "partition_reconciliation": {
-        "split_duration_sec": 12,
+        "split_duration_sec": 3,
         "reconcile_duration_sec": 30,
         "split_ratio": [0.5, 0.5],
         "updates_per_sec": 200,

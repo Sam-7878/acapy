@@ -129,9 +129,13 @@ if __name__ == '__main__':
         print("=== Running Scenario A-3: Partition & Reconciliation ===")
         scenario3_partition_reconciliation(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows)
 
+
     # CSV로 결과 출력
-    result_dir = Path(ROOT) / 'data' / 'result'
+    # result_dir = Path(ROOT) / 'data' / 'result'
+    result_dir = Path(ROOT) / cfg.data_result_path
     result_dir.mkdir(parents=True, exist_ok=True)
+    
+    
     output_file = result_dir / f"A_{args.scenario}_results.csv"
     with open(output_file, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=['scenario', 'scale_up', 'depth', 'p50_ms', 'p95_ms', 'p99_ms', 'tps'])

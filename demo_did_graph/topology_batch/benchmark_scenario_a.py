@@ -21,12 +21,12 @@ from common.bench_utils import get_bench_query, benchmark_query
 # ─────────────────────────────────────────────────────────
 # Scenario별 워크로드 함수
 # ─────────────────────────────────────────────────────────
-
 def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterations, rows):
     interval = params['turn_taking']['interval_sec']
     ratio = params['turn_taking']['update_ratio']
     for total in nodes:
         print(f"\n-- Scale-up: {total} nodes (Turn-Taking) --")
+
         for depth in depths:
             # Delegation 업데이트
             update_count = int(cfg.num_drones * ratio)
@@ -161,9 +161,12 @@ if __name__ == '__main__':
         print("=== Running Scenario A-3: Partition & Reconciliation ===")
         scenario3_partition_reconciliation(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows)
 
+
     # CSV로 결과 출력
-    result_dir = Path(ROOT) / 'data' / 'result'
+    # result_dir = Path(ROOT) / 'data' / 'result'
+    result_dir = Path(ROOT) / cfg.data_result_path
     result_dir.mkdir(parents=True, exist_ok=True)
+     
     output_file = result_dir / f"A_{args.scenario}_results.csv"
     with open(output_file, 'w', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=['scenario', 'scale_up', 'depth', 'p50_ms', 'p95_ms', 'p99_ms', 'tps'])
