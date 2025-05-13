@@ -102,26 +102,48 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
             # ————————————————
             # batch 업데이트: selected 리스트로 한 번에 처리
             # Python 리스트를 Cypher 리터럴 리스트로 변환
-            ids_list = "[" + ",".join(f"'{did}'" for did in selected) + "]"
+            # ids_list = "[" + ",".join(f"'{did}'" for did in selected) + "]"
 
-            # 1) 기존 DELEGATES 엣지 삭제
-            cur.execute(
-                """
-                UNWIND """ + ids_list + """ AS id
-                MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
-                DELETE r
-                """
-            )
-            # 2) 새로운 DELEGATES 엣지 생성
-            cur.execute(
-                """
-                UNWIND """ + ids_list + """ AS id
-                MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
-                CREATE (hq)-[:DELEGATES]->(d)
-                """
-            )
-            conn.commit()
+            # # 1) 기존 DELEGATES 엣지 삭제
+            # cur.execute(
+            #     """
+            #     UNWIND """ + ids_list + """ AS id
+            #     MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
+            #     DELETE r
+            #     """
+            # )
+            # # 2) 새로운 DELEGATES 엣지 생성
+            # cur.execute(
+            #     """
+            #     UNWIND """ + ids_list + """ AS id
+            #     MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
+            #     CREATE (hq)-[:DELEGATES]->(d)
+            #     """
+            # )
+            # conn.commit()
+            # ─── moderate‐sized batch 업데이트 ───
+            chunk_size = cfg.chunk_size
+            for i in range(0, len(selected), chunk_size):
+                chunk = selected[i:i+chunk_size]
+                ids_list = "[" + ",".join(f"'{did}'" for did in chunk) + "]"
 
+                # 1) 기존 DELEGATES 엣지 삭제
+                cur.execute(
+                    """
+                    UNWIND """ + ids_list + """ AS id
+                    MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
+                    DELETE r
+                    """
+                )
+                # 2) 새로운 DELEGATES 엣지 생성
+                cur.execute(
+                    """
+                    UNWIND """ + ids_list + """ AS id
+                    MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
+                    CREATE (hq)-[:DELEGATES]->(d)
+                    """
+                )
+                conn.commit()
 
 
             time.sleep(interval)
@@ -148,7 +170,6 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
         print(f"\n-- Chain-Churn: depth={depth} --")
         update_count = int(cfg.num_drones * ratio)
         selected = random.sample(drones_list, update_count)
-
 
         # for did in selected:
         #     cur.execute(
@@ -180,23 +201,44 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
 
         # ————————————————
         # batch 업데이트: selected 리스트로 한 번에 처리
-        ids_list = "[" + ",".join(f"'{did}'" for did in selected) + "]"
+        # ids_list = "[" + ",".join(f"'{did}'" for did in selected) + "]"
 
-        cur.execute(
-            """
-            UNWIND """ + ids_list + """ AS id
-            MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
-            DELETE r
-            """
-        )
-        cur.execute(
-            """
-            UNWIND """ + ids_list + """ AS id
-            MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
-            CREATE (hq)-[:DELEGATES]->(d)
-            """
-        )
-        conn.commit()
+        # cur.execute(
+        #     """
+        #     UNWIND """ + ids_list + """ AS id
+        #     MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
+        #     DELETE r
+        #     """
+        # )
+        # cur.execute(
+        #     """
+        #     UNWIND """ + ids_list + """ AS id
+        #     MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
+        #     CREATE (hq)-[:DELEGATES]->(d)
+        #     """
+        # )
+        # conn.commit()
+        # ─── moderate‐sized batch 업데이트 ───
+        chunk_size = cfg.chunk_size
+        for i in range(0, len(selected), chunk_size):
+            chunk = selected[i:i+chunk_size]
+            ids_list = "[" + ",".join(f"'{did}'" for did in chunk) + "]"
+
+            cur.execute(
+                """
+                UNWIND """ + ids_list + """ AS id
+                MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
+                DELETE r
+                """
+            )
+            cur.execute(
+                """
+                UNWIND """ + ids_list + """ AS id
+                MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
+                CREATE (hq)-[:DELEGATES]->(d)
+                """
+            )
+            conn.commit()
 
 
         time.sleep(interval)
@@ -222,7 +264,6 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
     boundary = int(total * split[0])
     print(f"\n-- Partition: A={boundary}, B={total-boundary}, duration={split_duration}s --")
     start = time.time()
-
 
     # # Partition 동안 계속 업데이트
     # while time.time() - start < split_duration:
@@ -283,42 +324,88 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
     #     conn.commit()
 
     # 파티션 A/B별로 일괄 업데이트 (selected 대신 first_ids/second_ids)
+    # first_ids  = drones_list[:boundary]
+    # second_ids = drones_list[boundary:]
+    # while time.time() - start < split_duration:
+    #     # — partition A
+    #     ids_a = "[" + ",".join(f"'{did}'" for did in first_ids) + "]"
+    #     cur.execute(
+    #         """
+    #         UNWIND """ + ids_a + """ AS id
+    #         MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
+    #         DELETE r
+    #         """
+    #     )
+    #     cur.execute(
+    #         """
+    #         UNWIND """ + ids_a + """ AS id
+    #         MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
+    #         CREATE (hq)-[:DELEGATES]->(d)
+    #         """
+    #     )
+    #     # — partition B
+    #     ids_b = "[" + ",".join(f"'{did}'" for did in second_ids) + "]"
+    #     cur.execute(
+    #         """
+    #         UNWIND """ + ids_b + """ AS id
+    #         MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
+    #         DELETE r
+    #         """
+    #     )
+    #     cur.execute(
+    #         """
+    #         UNWIND """ + ids_b + """ AS id
+    #         MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
+    #         CREATE (hq)-[:DELEGATES]->(d)
+    #         """
+    #     )
+    #     conn.commit()
+    # ─── moderate‐sized batch 파티션 A/B 업데이트 ───
     first_ids  = drones_list[:boundary]
     second_ids = drones_list[boundary:]
+    chunk_size = 500
     while time.time() - start < split_duration:
-        # — partition A
-        ids_a = "[" + ",".join(f"'{did}'" for did in first_ids) + "]"
-        cur.execute(
-            """
-            UNWIND """ + ids_a + """ AS id
-            MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
-            DELETE r
-            """
-        )
-        cur.execute(
-            """
-            UNWIND """ + ids_a + """ AS id
-            MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
-            CREATE (hq)-[:DELEGATES]->(d)
-            """
-        )
-        # — partition B
-        ids_b = "[" + ",".join(f"'{did}'" for did in second_ids) + "]"
-        cur.execute(
-            """
-            UNWIND """ + ids_b + """ AS id
-            MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
-            DELETE r
-            """
-        )
-        cur.execute(
-            """
-            UNWIND """ + ids_b + """ AS id
-            MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
-            CREATE (hq)-[:DELEGATES]->(d)
-            """
-        )
-        conn.commit()
+        # Partition A
+        for i in range(0, len(first_ids), chunk_size):
+            chunk = first_ids[i:i+chunk_size]
+            ids_list = "[" + ",".join(f"'{did}'" for did in chunk) + "]"
+
+            cur.execute(
+                """
+                UNWIND """ + ids_list + """ AS id
+                MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
+                DELETE r
+                """
+            )
+            cur.execute(
+                """
+                UNWIND """ + ids_list + """ AS id
+                MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
+                CREATE (hq)-[:DELEGATES]->(d)
+                """
+            )
+            conn.commit()
+
+        # Partition B
+        for i in range(0, len(second_ids), chunk_size):
+            chunk = second_ids[i:i+chunk_size]
+            ids_list = "[" + ",".join(f"'{did}'" for did in chunk) + "]"
+
+            cur.execute(
+                """
+                UNWIND """ + ids_list + """ AS id
+                MATCH ()-[r:DELEGATES]->(d:Drone {id:id})
+                DELETE r
+                """
+            )
+            cur.execute(
+                """
+                UNWIND """ + ids_list + """ AS id
+                MATCH (hq:HQ {id:'""" + cfg.headquarters_id + """'}), (d:Drone {id:id})
+                CREATE (hq)-[:DELEGATES]->(d)
+                """
+            )
+            conn.commit()
 
 
     # 재결합 벤치마크
@@ -335,6 +422,7 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
         'p99_ms': p99*1000,
         'tps': tps
     })
+
 
 # ─────────────────────────────────────────────────────────
 # Main

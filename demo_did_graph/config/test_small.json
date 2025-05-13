@@ -18,6 +18,7 @@
   "scale_up_nodes": [100, 500, 1000],
   "depths": [2, 4, 6, 8],
   "iterations": 10,
+  "chunk_size": 500,
   "scenario_params": {
     "1": {
       "turn_taking": {

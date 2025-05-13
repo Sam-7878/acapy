@@ -47,6 +47,9 @@ class TestConfig:
         self.headquarters_id = data.get('headquarters_id')
         self.private_key_path = data.get('private_key_path')
         self.data_result_path = data.get('data_result_path')
+        self.iterations = data.get('iterations', 100)
+        self.chunk_size = data.get('chunk_size', 500)
+        
         self.scenario_params = data.get('scenario_params', {})
 
         # Legacy/optional fields

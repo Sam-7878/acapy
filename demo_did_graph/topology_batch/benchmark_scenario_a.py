@@ -35,11 +35,22 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
             # for did in drones:
             #     cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
             # 배치 업데이트: drone_id 목록을 한 번에 처리
-            cur.execute(
-                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-                (cfg.headquarters_id, drones)
-            )
-            conn.commit()
+            # cur.execute(
+            #     "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+            #     (cfg.headquarters_id, drones)
+            # )
+            # conn.commit()
+
+            # ─── moderate‐sized batch 업데이트 ───
+            chunk_size = cfg.chunk_size
+            for i in range(0, len(drones), chunk_size):
+                chunk = drones[i:i+chunk_size]
+                cur.execute(
+                    "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                    (cfg.headquarters_id, chunk)
+                )
+                conn.commit()
+
 
             time.sleep(interval)
             # 성능 측정
@@ -65,11 +76,21 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
         # for did in drones:
         #     cur.execute("UPDATE delegation SET hq_id=%s WHERE drone_id=%s", (cfg.headquarters_id, did))
         # 배치 업데이트
-        cur.execute(
-            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-            (cfg.headquarters_id, drones)
-        )
-        conn.commit()
+        # cur.execute(
+        #     "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+        #     (cfg.headquarters_id, drones)
+        # )
+        # conn.commit()
+        # ─── moderate‐sized batch 업데이트 ───
+        chunk_size = cfg.chunk_size
+        for i in range(0, len(drones), chunk_size):
+            chunk = drones[i:i+chunk_size]
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                (cfg.headquarters_id, chunk)
+            )
+            conn.commit()
+
 
         time.sleep(interval)
         query = get_bench_query(cfg.headquarters_id, depth)
@@ -99,16 +120,35 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
     first  = list(range(boundary))
     second = list(range(boundary, total))
     # 파티션별 배치 업데이트
+    # while time.time() - start < split_dur:
+    #     cur.execute(
+    #         "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+    #         (cfg.headquarters_id, first)
+    #     )
+    #     cur.execute(
+    #         "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+    #         (cfg.headquarters_id, second)
+    #     )
+    #     conn.commit()
+    # ─── moderate‐sized batch 파티션 A/B 업데이트 ───
+    chunk_size = cfg.chunk_size
     while time.time() - start < split_dur:
-        cur.execute(
-            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-            (cfg.headquarters_id, first)
-        )
-        cur.execute(
-            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-            (cfg.headquarters_id, second)
-        )
+        # Partition A
+        for i in range(0, len(first), chunk_size):
+            chunk = first[i:i+chunk_size]
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                (cfg.headquarters_id, chunk)
+            )
+        # Partition B
+        for i in range(0, len(second), chunk_size):
+            chunk = second[i:i+chunk_size]
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                (cfg.headquarters_id, chunk)
+            )
         conn.commit()
+
 
     # 재결합 및 동기화
     num_sync = params['partition_reconciliation']['post_reconcile_sync_requests']
@@ -136,9 +176,9 @@ if __name__ == '__main__':
         cfg_json = json.load(f)
 
     # 벤치파라미터
-    scale_up_nodes = cfg_json.get('scale_up_nodes', [100000, 500000, 1000000])
+    scale_up_nodes = cfg_json.get('scale_up_nodes', [1000, 5000, 10000])
     depths = cfg_json.get('depths', [4, 8, 12, 16])
-    iterations = cfg_json.get('iterations', 1000)
+    iterations = cfg_json.get('iterations', 100)
 
     # DB 연결
     conn = psycopg.connect(**cfg.db_params)

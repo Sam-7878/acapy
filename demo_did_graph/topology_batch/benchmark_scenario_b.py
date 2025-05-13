@@ -25,6 +25,7 @@ from common.bench_utils import get_bench_query, benchmark_query
 def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterations, rows):
     interval = params['turn_taking']['interval_sec']
     ratio = params['turn_taking']['update_ratio']
+
     for total in nodes:
         print(f"\n-- Scale-up: {total} nodes (Turn-Taking) --")
         for depth in depths:
@@ -37,11 +38,21 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
             #         (cfg.headquarters_id, drones)
             #     )
             # 한 번에 다중 레코드 갱신
-            cur.execute(
-                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-                (cfg.headquarters_id, drones)
-            )
-            conn.commit()
+            # cur.execute(
+            #     "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+            #     (cfg.headquarters_id, drones)
+            # )
+            # conn.commit()
+            # ─── moderate‐sized batch 업데이트 ───
+            chunk_size = cfg.chunk_size
+            for i in range(0, len(drones), chunk_size):
+                chunk = drones[i:i+chunk_size]
+                cur.execute(
+                    "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                    (cfg.headquarters_id, chunk)
+                )
+                conn.commit()
+
 
             time.sleep(interval)
             query = get_bench_query(cfg.headquarters_id, depth)
@@ -62,6 +73,7 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
     cycle = params['chain_churn']['depth_cycle']
     interval = params['chain_churn']['cycle_interval_sec']
     ratio = params['chain_churn']['update_ratio']
+
     for depth in cycle:
         print(f"\n-- Chain-Churn: depth={depth} --")
         update_count = int(cfg.num_drones * ratio)
@@ -72,12 +84,22 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
         #         "UPDATE delegation SET hq_id = %s WHERE drone_id = %s",
         #         (cfg.headquarters_id, did)
         #     )
-            # 한 번에 다중 레코드 갱신
-        cur.execute(
-            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-            (cfg.headquarters_id, drones)
-        )
-        conn.commit()
+        # 한 번에 다중 레코드 갱신
+        # cur.execute(
+        #     "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+        #     (cfg.headquarters_id, drones)
+        # )
+        # conn.commit()
+        # ─── moderate‐sized batch 업데이트 ───
+        chunk_size = cfg.chunk_size
+        for i in range(0, len(drones), chunk_size):
+            chunk = drones[i:i+chunk_size]
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                (cfg.headquarters_id, chunk)
+            )
+            conn.commit()
+
 
         time.sleep(interval)
         query = get_bench_query(cfg.headquarters_id, depth)
@@ -116,16 +138,35 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
     #         )
     first = list(range(boundary))
     second = list(range(boundary, total))
+    # while time.time() - start < split_duration:
+    #     cur.execute(
+    #         "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+    #         (cfg.headquarters_id, first)
+    #     )
+    #     cur.execute(
+    #         "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+    #         (cfg.headquarters_id, second)
+    #     )
+    #     conn.commit()
+    # ─── moderate‐sized batch 파티션 A/B 업데이트 ───
+    chunk_size = cfg.chunk_size
     while time.time() - start < split_duration:
-        cur.execute(
-            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-            (cfg.headquarters_id, first)
-        )
-        cur.execute(
-            "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-            (cfg.headquarters_id, second)
-        )
+        # Partition A
+        for i in range(0, len(first), chunk_size):
+            chunk = first[i:i+chunk_size]
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                (cfg.headquarters_id, chunk)
+            )
+        # Partition B
+        for i in range(0, len(second), chunk_size):
+            chunk = second[i:i+chunk_size]
+            cur.execute(
+                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                (cfg.headquarters_id, chunk)
+            )
         conn.commit()
+
 
     print(f"Partition 해제, 동기화 {recon_sync}건 --")
     query = get_bench_query(cfg.headquarters_id, depths[0])
@@ -141,6 +182,10 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
         'tps': tps
     })
 
+
+# ─────────────────────────────────────────────────────────
+# 메인 함수
+# ─────────────────────────────────────────────────────────
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Scenario B Dynamic Topology Benchmark")
     parser.add_argument('-c', '--config', required=True, help='Path to config JSON')

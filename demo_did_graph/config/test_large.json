@@ -7,17 +7,18 @@
     "password": "dooley"
   },
   "node_count": {
-    "drone": 1000000,
-    "mission": 100000,
-    "execution": 100000,
-    "verification": 100000
+    "drone": 50000,
+    "mission": 10000,
+    "execution": 10000,
+    "verification": 10000
   },
   "headquarters_id": "HQ",
   "private_key_path": "common/keys/commander_private.pem",
   "data_result_path": "data/result/topology_batch",
-  "scale_up_nodes": [100000, 500000, 1000000],
+  "scale_up_nodes": [10000, 30000, 50000],
   "depths": [4, 8, 12, 16],
-  "iterations": 1000,
+  "iterations": 100,
+  "chunk_size": 500,
   "scenario_params": {
     "1": {
       "turn_taking": {
