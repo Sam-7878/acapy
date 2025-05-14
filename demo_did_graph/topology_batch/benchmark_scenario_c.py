@@ -67,6 +67,13 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
         for depth in depths:
             update_count = int(cfg.num_drones * ratio)
             selected = random.sample(drones_list, update_count)
+            # print(f" # of drones : {cfg.num_drones} → {update_count} drones will be updated")
+
+            # 샘플링 (drones_list 길이는 여전히 total 이상이 보장되어야 함)
+            # update_count = int(total * ratio)
+            # print(f" # of drones : {total} → {update_count} drones will be updated")
+            # selected = random.sample(drones_list, update_count)
+            # print(f"  → 샘플링된 드론 수: {len(selected)}")
 
             # # 위임 업데이트: 기존 DELEGATES 엣지 삭제 후 재생성
             # for did in selected:

@@ -30,74 +30,79 @@ MATCH (hq:HQ {{id:'{hq_id}'}})
 RETURN count(v) AS vc_count;
 """
 
-# ─────────────────────────────────────────────────────────
-# 2) 벤치마크 실행 함수
-# ─────────────────────────────────────────────────────────
-# def benchmark_query(cur, query: str, iterations: int):
-#     latencies = []
-#     # 워밍업
-#     cur.execute(query)
-#     cur.fetchone()
-
-#     # 반복 실행
-#     start_all = time.perf_counter()
-#     for _ in range(iterations):
-#         t0 = time.perf_counter()
-#         cur.execute(query)
-#         _ = cur.fetchone()[0]
-#         latencies.append(time.perf_counter() - t0)
-#     elapsed_all = time.perf_counter() - start_all
-
-#     # 통계 계산
-#     p50 = statistics.quantiles(latencies, n=100)[49]
-#     p95 = statistics.quantiles(latencies, n=100)[94]
-#     p99 = statistics.quantiles(latencies, n=100)[98]
-#     tps = iterations / elapsed_all
-#     return p50, p95, p99, tps
 
 # ─────────────────────────────────────────────────────────
 # 3) Scenario별 워크로드 함수
 # ─────────────────────────────────────────────────────────
-def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterations, rows, drones_list):
+def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterations, rows, _):
     interval = params['turn_taking']['interval_sec']
-    ratio = params['turn_taking']['update_ratio']
+    ratio    = params['turn_taking']['update_ratio']
+
     for total in nodes:
         print(f"\n-- Scale-up: {total} nodes (Turn-Taking) --")
+
+        # ── 1) 이 단계에 맞춰, DB에 아직 없는 노드를 삽입하세요. ──
+        # (setup_scenario_c.py 나 별도 함수로 처리하셨다면 여기에 호출)
+        # 예: insert_new_drones(cur, total)
+
+        conn.commit()
+
+        # ── 2) 실제 DB에 저장된 모든 Drone ID를 다시 조회 ──
+        cur.execute("MATCH (d:Drone) RETURN d.id;")
+        drones_list = [r[0] for r in cur.fetchall()]
+        # print(f"  → 현재 DB에 로드된 드론 수: {len(drones_list)}")
+
         for depth in depths:
-            update_count = int(cfg.num_drones * ratio)
+            # ── 반드시 total 기준으로만 계산 ──
+            update_count = int(total * ratio)
+
+            # ── 샘플링 (drones_list 길이는 여전히 total 이상이 보장되어야 함) ──
             selected = random.sample(drones_list, update_count)
-            # 위임 업데이트: 기존 DELEGATES 엣지 삭제 후 재생성
+
+            # ── 위임 관계 갱신 ──
             for did in selected:
                 cur.execute(
                     f"MATCH ()-[r:DELEGATES]->(d:Drone {{id:'{did}'}}) DELETE r;"
                 )
                 cur.execute(
-                    f"MATCH (hq:HQ {{id:'{cfg.headquarters_id}'}}),(d:Drone {{id:'{did}'}}) CREATE (hq)-[:DELEGATES]->(d);"
+                    f"""MATCH (hq:HQ {{id:'{cfg.headquarters_id}'}}),
+                              (d:Drone {{id:'{did}'}})
+                       CREATE (hq)-[:DELEGATES]->(d);"""
                 )
             conn.commit()
+
+            # ── 측정 ──
             time.sleep(interval)
             query = get_bench_query(cfg.headquarters_id, depth)
             p50, p95, p99, tps = benchmark_query(cur, query, iterations)
-            print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
+            print(f"Depth {depth} → P50: {p50*1000:.2f} ms, "
+                  f"P95: {p95*1000:.2f} ms, "
+                  f"P99: {p99*1000:.2f} ms, "
+                  f"TPS: {tps:.2f}")
+
             rows.append({
                 'scenario': 'C-1',
                 'scale_up': total,
-                'depth': depth,
-                'p50_ms': p50*1000,
-                'p95_ms': p95*1000,
-                'p99_ms': p99*1000,
-                'tps': tps
+                'depth':    depth,
+                'p50_ms':   p50*1000,
+                'p95_ms':   p95*1000,
+                'p99_ms':   p99*1000,
+                'tps':      tps
             })
+
+
 
 
 def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, rows, drones_list):
     cycle = params['chain_churn']['depth_cycle']
     interval = params['chain_churn']['cycle_interval_sec']
     ratio = params['chain_churn']['update_ratio']
+
     for depth in cycle:
         print(f"\n-- Chain-Churn: depth={depth} --")
         update_count = int(cfg.num_drones * ratio)
         selected = random.sample(drones_list, update_count)
+
         for did in selected:
             cur.execute(
                 f"MATCH ()-[r:DELEGATES]->(d:Drone {{id:'{did}'}}) DELETE r;"
@@ -106,6 +111,7 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
                 f"MATCH (hq:HQ {{id:'{cfg.headquarters_id}'}}),(d:Drone {{id:'{did}'}}) CREATE (hq)-[:DELEGATES]->(d);"
             )
         conn.commit()
+
         time.sleep(interval)
         query = get_bench_query(cfg.headquarters_id, depth)
         p50, p95, p99, tps = benchmark_query(cur, query, iterations)
@@ -129,6 +135,7 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
     boundary = int(total * split[0])
     print(f"\n-- Partition: A={boundary}, B={total-boundary}, duration={split_duration}s --")
     start = time.time()
+
     # Partition 동안 계속 업데이트
     while time.time() - start < split_duration:
         for did in drones_list[:boundary]:
@@ -138,6 +145,7 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
             cur.execute(
                 f"MATCH (hq:HQ {{id:'{cfg.headquarters_id}'}}),(d:Drone {{id:'{did}'}}) CREATE (hq)-[:DELEGATES]->(d);"
             )
+
         for did in drones_list[boundary:]:
             cur.execute(
                 f"MATCH ()-[r:DELEGATES]->(d:Drone {{id:'{did}'}}) DELETE r;"
@@ -146,6 +154,7 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
                 f"MATCH (hq:HQ {{id:'{cfg.headquarters_id}'}}),(d:Drone {{id:'{did}'}}) CREATE (hq)-[:DELEGATES]->(d);"
             )
         conn.commit()
+
     # 재결합 벤치마크
     print(f"Partition 해제, 동기화 {recon_sync}건 --")
     query = get_bench_query(cfg.headquarters_id, depths[0])
@@ -179,6 +188,7 @@ if __name__ == '__main__':
     depths = cfg_json.get('depths', [])
     iterations = cfg_json.get('iterations', 1000)
     params = cfg.scenario_params.get(args.scenario, {})
+
 
     # DB 연결 및 graph_path 설정
     conn = psycopg.connect(**cfg.db_params)

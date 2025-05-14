@@ -58,15 +58,74 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
     conn.commit()
     print("› 인덱스 생성 완료")
 
-    # 4) 네트워크 계층 구조 생성
-    with open(config_path, 'r', encoding='utf-8') as f:
-        cfg_data = json.load(f)
-    sp = cfg_data.get("scenario_parameters", {})
-    HQ_ID = sp.get("HQ_ID", "HQ1")
-    REGIONAL_COUNT = sp.get("REGIONAL_COUNT", 100)
-    UNIT_COUNT = sp.get("UNIT_COUNT", 200)
-    SQUAD_COUNT = sp.get("SQUAD_COUNT", 500)
-    DRONES_PER_SQUAD = sp.get("DRONES_PER_SQUAD", 5)
+
+    # 4) 네트워크 계층 구조 생성 (config.node_count.drone 기반으로 동적 생성)
+    import math
+    HQ_ID         = cfg.headquarters_id
+    total_drones  = cfg.num_drones
+
+    # (예시) 균형 잡힌 분배를 위해 단계별 개수 계산
+    REGIONAL_COUNT   = max(1, int(total_drones ** 0.25))
+    UNIT_COUNT       = max(1, int(total_drones ** 0.50))
+    SQUAD_COUNT      = max(1, int(total_drones ** 0.75))
+    DRONES_PER_SQUAD = math.ceil(total_drones / SQUAD_COUNT)
+
+    start_net = time.perf_counter()
+    # ─── HQ 생성 ───────────────────────────────────────────
+    cur.execute(f"CREATE (:HQ {{id:'{HQ_ID}'}});")
+
+    # ─── Regional 생성 ────────────────────────────────────
+    regionals = []
+    for i in range(REGIONAL_COUNT):
+        rid = f"R{i:03d}"
+        regionals.append(rid)
+        cur.execute(f"CREATE (:Regional {{id:'{rid}'}});")
+        cur.execute(
+            f"MATCH (h:HQ {{id:'{HQ_ID}'}}),(r:Regional {{id:'{rid}'}})"
+            " CREATE (h)-[:DELEGATES]->(r);"
+        )
+
+    # ─── Unit 생성 ────────────────────────────────────────
+    units = []
+    for i in range(UNIT_COUNT):
+        uid = f"U{i:04d}"
+        units.append(uid)
+        cur.execute(f"CREATE (:Unit {{id:'{uid}'}});")
+        cur.execute(
+            f"MATCH (r:Regional {{id:'{regionals[i % len(regionals)]}'}}),(u:Unit {{id:'{uid}'}})"
+            " CREATE (r)-[:DELEGATES]->(u);"
+        )
+
+    # ─── Squad 생성 ───────────────────────────────────────
+    squads = []
+    for i in range(SQUAD_COUNT):
+        sid = f"S{i:05d}"
+        squads.append(sid)
+        cur.execute(f"CREATE (:Squad {{id:'{sid}'}});")
+        cur.execute(
+            f"MATCH (u:Unit {{id:'{units[i % len(units)]}'}}),(s:Squad {{id:'{sid}'}})"
+            " CREATE (u)-[:DELEGATES]->(s);"
+        )
+
+    # ─── Drone 생성 ───────────────────────────────────────
+    drones = []
+    for i in range(total_drones):
+        did = f"D{i:07d}"
+        drones.append(did)
+        cur.execute(f"CREATE (:Drone {{id:'{did}'}});")
+        cur.execute(
+            f"MATCH (s:Squad {{id:'{squads[i % len(squads)]}'}}),(d:Drone {{id:'{did}'}})"
+            " CREATE (s)-[:DELEGATES]->(d);"
+        )
+
+    conn.commit()
+    print(
+        f"› 네트워크 생성 완료: "
+        f"{len(regionals)}R, {len(units)}U, {len(squads)}S, {len(drones)}D "
+        f"in {time.perf_counter() - start_net:.2f}s"
+    )
+
+
 
     start_net = time.perf_counter()
     # HQ 노드
