@@ -65,8 +65,13 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
         print(f"\n-- Scale-up: {total} nodes (Turn-Taking) --")
         
         for depth in depths:
+            # update_count = int(cfg.num_drones * ratio)
+            # selected = random.sample(drones_list, update_count)
+
             update_count = int(cfg.num_drones * ratio)
-            selected = random.sample(drones_list, update_count)
+            selected = random.sample(range(cfg.num_drones), update_count)
+
+
             # print(f" # of drones : {cfg.num_drones} → {update_count} drones will be updated")
 
             # 샘플링 (drones_list 길이는 여전히 total 이상이 보장되어야 함)
@@ -175,8 +180,11 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
 
     for depth in cycle:
         print(f"\n-- Chain-Churn: depth={depth} --")
+        # update_count = int(cfg.num_drones * ratio)
+        # selected = random.sample(drones_list, update_count)
+
         update_count = int(cfg.num_drones * ratio)
-        selected = random.sample(drones_list, update_count)
+        selected = random.sample(range(cfg.num_drones), update_count)
 
         # for did in selected:
         #     cur.execute(
