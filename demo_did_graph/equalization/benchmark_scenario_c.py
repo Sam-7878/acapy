@@ -44,6 +44,7 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, scale_up_nodes, depths
         conn.close()
 
         # 2) 그래프 DROP/CREATE (별도 커넥션)
+        print(f"\n-- Init DB : update_count based on {total} nodes (Turn-Taking) --")
         setup_database(cfg, private_key, int(args.scenario))
 
         # 3) 벤치마크용 커넥션 재생성 및 graph_path 재설정
@@ -101,7 +102,7 @@ def scenario2_chain_churn(cur, conn, cfg, params, scale_up_nodes, depths, iterat
 
     for depth in cycle:
         print(f"\n=== Reinitializing graph for Chain-Churn (constant node count) ===")
-        setup_database(cfg, private_key, int(args.scenario))
+        # setup_database(cfg, private_key, int(args.scenario))
         cur.execute("SET graph_path = vc_graph;")
         cur.execute("MATCH (d:Drone) RETURN d.id;")
         drones_list = [r[0] for r in cur.fetchall()]
@@ -140,9 +141,10 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, scale_up_nodes, d
     recon_sync = params['partition_reconciliation']['post_reconcile_sync_requests']
 
     print(f"\n=== Reinitializing graph for Partition & Reconciliation ===")
-    setup_database(cfg, private_key, int(args.scenario))
+    # setup_database(cfg, private_key, int(args.scenario))
     cur.execute("SET graph_path = vc_graph;")
     cur.execute("MATCH (d:Drone) RETURN d.id;")
+
     drones_list = [r[0] for r in cur.fetchall()]
 
     total = len(drones_list)

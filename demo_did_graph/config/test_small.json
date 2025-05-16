@@ -17,7 +17,7 @@
   },
   "headquarters_id": "HQ",
   "private_key_path": "common/keys/commander_private.pem",
-  "data_result_path": "data/result/topology_batch",
+  "data_result_path": "data/result/equalization",
   "scale_up_nodes": [100, 500, 1000],
   "depths": [2, 4, 6, 8],
   "iterations": 10,
