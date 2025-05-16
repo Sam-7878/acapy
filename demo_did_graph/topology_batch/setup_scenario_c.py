@@ -4,11 +4,10 @@
 
 import json
 import time
-import random
 import argparse
 from pathlib import Path
 import psycopg
-import sys, os
+import sys
 
 # 프로젝트 루트를 PYTHONPATH에 추가
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,7 +36,7 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
     cur.execute("DROP GRAPH IF EXISTS vc_graph CASCADE;")
     cur.execute("CREATE GRAPH vc_graph;")
     cur.execute("SET graph_path = vc_graph;")
-
+    
     # 2) 라벨 및 엣지 타입 생성
     labels = ["HQ", "Regional", "Unit", "Squad", "Drone", "Issuer", "Subject", "VC"]
     etypes = ["DELEGATES", "ISSUED", "ASSERTS"]
@@ -58,36 +57,37 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
     conn.commit()
     print("› 인덱스 생성 완료")
 
-    # 4) 네트워크 계층 구조 생성
-    with open(config_path, 'r', encoding='utf-8') as f:
-        cfg_data = json.load(f)
-    sp = cfg_data.get("scenario_parameters", {})
-    HQ_ID = sp.get("HQ_ID", "HQ1")
-    REGIONAL_COUNT = sp.get("REGIONAL_COUNT", 100)
-    UNIT_COUNT = sp.get("UNIT_COUNT", 200)
-    SQUAD_COUNT = sp.get("SQUAD_COUNT", 500)
-    DRONES_PER_SQUAD = sp.get("DRONES_PER_SQUAD", 5)
+    # 4) 네트워크 계층 구조 생성 (config 기반)
+    REGIONAL_COUNT   = cfg.num_regions
+    UNIT_COUNT       = cfg.num_units
+    SQUAD_COUNT      = cfg.num_squads
+    DRONES_PER_SQUAD = cfg.num_drones_per_squad
+    HQ_ID            = cfg.headquarters_id
 
     start_net = time.perf_counter()
     # HQ 노드
     cur.execute(f"CREATE (:HQ {{id:'{HQ_ID}'}});")
+
     # Regional
     regionals = [f"R{i:03d}" for i in range(1, REGIONAL_COUNT + 1)]
     for rid in regionals:
         cur.execute(f"CREATE (:Regional {{id:'{rid}'}});")
         cur.execute(f"MATCH (h:HQ {{id:'{HQ_ID}'}}),(r:Regional {{id:'{rid}'}}) CREATE (h)-[:DELEGATES]->(r);")
+
     # Unit
     units = [f"U{i:04d}" for i in range(1, UNIT_COUNT + 1)]
     for idx, uid in enumerate(units):
         parent = regionals[idx % REGIONAL_COUNT]
         cur.execute(f"CREATE (:Unit {{id:'{uid}'}});")
         cur.execute(f"MATCH (r:Regional {{id:'{parent}'}}),(u:Unit {{id:'{uid}'}}) CREATE (r)-[:DELEGATES]->(u);")
+
     # Squad
     squads = [f"S{i:05d}" for i in range(1, SQUAD_COUNT + 1)]
     for idx, sid in enumerate(squads):
         parent = units[idx % UNIT_COUNT]
         cur.execute(f"CREATE (:Squad {{id:'{sid}'}});")
         cur.execute(f"MATCH (u:Unit {{id:'{parent}'}}),(s:Squad {{id:'{sid}'}}) CREATE (u)-[:DELEGATES]->(s);")
+
     # Drone
     drones = []
     for idx, sid in enumerate(squads):
@@ -97,29 +97,12 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
             cur.execute(f"CREATE (:Drone {{id:'{did}'}});")
             cur.execute(f"MATCH (s:Squad {{id:'{sid}'}}),(d:Drone {{id:'{did}'}}) CREATE (s)-[:DELEGATES]->(d);")
     conn.commit()
-    # print(f"› 네트워크 생성 완료: {len(regionals)}R, {len(units)}U, {len(squads)}S, {len(drones)}D in {time.perf_counter() - start_net:.2f}s")
-
     print(f"› 네트워크 생성 완료: {len(regionals)}R, {len(units)}U, {len(squads)}S, {len(drones)}D in {time.perf_counter() - start_net:.2f}s")
 
-
-    # 5) Drone 노드의 초기 hqId 설정 (한 번에 배치 처리)
-    # cur.execute(
-    #     """
-    #     MATCH (d:Drone)
-    #     SET d.hqId = $hqId
-    #     """,
-    #     parameters={"hqId": HQ_ID}
-    # )
-    # 값 바인딩 없이 f-string으로 바로 삽입
-    cur.execute(f"""
-        MATCH (d:Drone)
-        SET d.hqId = '{HQ_ID}'
-    """)
-
+    # 5) Drone hqId 설정
+    cur.execute(f"MATCH (d:Drone) SET d.hqId = '{HQ_ID}';")
     conn.commit()
     print(f"› Drone hqId 초기 설정 완료: {len(drones)}건 처리")
-
-
 
     # 6) Issuer 및 VC 노드 삽입
     priv_key = load_private_key(cfg.private_key_path)
@@ -142,9 +125,6 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
         cur.execute(f"MATCH (s:Subject {{did:'{subject_did}'}}),(v:VC {{vc_id:'{vc['id']}'}}) CREATE (v)-[:ASSERTS]->(s);")
     conn.commit()
     print(f"› VC 및 관계 삽입 완료: {len(drones)}건 in {time.perf_counter() - start_vc:.2f}s")
-
-
-
 
     # 7) Scenario 완료 로깅
     print(f"› Scenario C-{scenario} 환경 설정 완료: DID/VC 및 Graph 준비 완료")

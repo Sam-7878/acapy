@@ -7,7 +7,10 @@
     "password": "dooley"
   },
   "node_count": {
-    "drone": 1000,
+    "region": 1,
+    "unit": 10,
+    "squad": 100,
+    "drone_per_squad": 10,
     "mission": 100,
     "execution": 100,
     "verification": 100

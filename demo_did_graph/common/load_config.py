@@ -38,10 +38,16 @@ class TestConfig:
 
         # Node counts
         node_count = data.get('node_count', {})
-        self.num_drones = node_count.get('drone', 0)
-        self.num_mission = node_count.get('mission', 0)
-        self.num_execution = node_count.get('execution', 0)
-        self.num_verification = node_count.get('verification', 0)
+        self.num_regions = node_count.get('region', 10)
+        self.num_units = node_count.get('unit', 10)
+        self.num_squads = node_count.get('squad', 10)
+        self.num_drones_per_squad = node_count.get('drone_per_squad', 10)
+        self.num_drones = self.num_squads * self.num_drones_per_squad
+
+        self.num_mission = node_count.get('mission', 100)
+        self.num_execution = node_count.get('execution', 100)
+        self.num_verification = node_count.get('verification', 100)
+
 
         # Operation-specific settings
         self.headquarters_id = data.get('headquarters_id')

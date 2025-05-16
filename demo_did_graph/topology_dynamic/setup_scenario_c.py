@@ -4,11 +4,10 @@
 
 import json
 import time
-import random
 import argparse
 from pathlib import Path
 import psycopg
-import sys, os
+import sys
 
 # 프로젝트 루트를 PYTHONPATH에 추가
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,7 +36,7 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
     cur.execute("DROP GRAPH IF EXISTS vc_graph CASCADE;")
     cur.execute("CREATE GRAPH vc_graph;")
     cur.execute("SET graph_path = vc_graph;")
-
+    
     # 2) 라벨 및 엣지 타입 생성
     labels = ["HQ", "Regional", "Unit", "Squad", "Drone", "Issuer", "Subject", "VC"]
     etypes = ["DELEGATES", "ISSUED", "ASSERTS"]
@@ -58,95 +57,37 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
     conn.commit()
     print("› 인덱스 생성 완료")
 
-
-    # 4) 네트워크 계층 구조 생성 (config.node_count.drone 기반으로 동적 생성)
-    import math
-    HQ_ID         = cfg.headquarters_id
-    total_drones  = cfg.num_drones
-
-    # (예시) 균형 잡힌 분배를 위해 단계별 개수 계산
-    REGIONAL_COUNT   = max(1, int(total_drones ** 0.25))
-    UNIT_COUNT       = max(1, int(total_drones ** 0.50))
-    SQUAD_COUNT      = max(1, int(total_drones ** 0.75))
-    DRONES_PER_SQUAD = math.ceil(total_drones / SQUAD_COUNT)
-
-    start_net = time.perf_counter()
-    # ─── HQ 생성 ───────────────────────────────────────────
-    cur.execute(f"CREATE (:HQ {{id:'{HQ_ID}'}});")
-
-    # ─── Regional 생성 ────────────────────────────────────
-    regionals = []
-    for i in range(REGIONAL_COUNT):
-        rid = f"R{i:03d}"
-        regionals.append(rid)
-        cur.execute(f"CREATE (:Regional {{id:'{rid}'}});")
-        cur.execute(
-            f"MATCH (h:HQ {{id:'{HQ_ID}'}}),(r:Regional {{id:'{rid}'}})"
-            " CREATE (h)-[:DELEGATES]->(r);"
-        )
-
-    # ─── Unit 생성 ────────────────────────────────────────
-    units = []
-    for i in range(UNIT_COUNT):
-        uid = f"U{i:04d}"
-        units.append(uid)
-        cur.execute(f"CREATE (:Unit {{id:'{uid}'}});")
-        cur.execute(
-            f"MATCH (r:Regional {{id:'{regionals[i % len(regionals)]}'}}),(u:Unit {{id:'{uid}'}})"
-            " CREATE (r)-[:DELEGATES]->(u);"
-        )
-
-    # ─── Squad 생성 ───────────────────────────────────────
-    squads = []
-    for i in range(SQUAD_COUNT):
-        sid = f"S{i:05d}"
-        squads.append(sid)
-        cur.execute(f"CREATE (:Squad {{id:'{sid}'}});")
-        cur.execute(
-            f"MATCH (u:Unit {{id:'{units[i % len(units)]}'}}),(s:Squad {{id:'{sid}'}})"
-            " CREATE (u)-[:DELEGATES]->(s);"
-        )
-
-    # ─── Drone 생성 ───────────────────────────────────────
-    drones = []
-    for i in range(total_drones):
-        did = f"D{i:07d}"
-        drones.append(did)
-        cur.execute(f"CREATE (:Drone {{id:'{did}'}});")
-        cur.execute(
-            f"MATCH (s:Squad {{id:'{squads[i % len(squads)]}'}}),(d:Drone {{id:'{did}'}})"
-            " CREATE (s)-[:DELEGATES]->(d);"
-        )
-
-    conn.commit()
-    print(
-        f"› 네트워크 생성 완료: "
-        f"{len(regionals)}R, {len(units)}U, {len(squads)}S, {len(drones)}D "
-        f"in {time.perf_counter() - start_net:.2f}s"
-    )
-
-
+    # 4) 네트워크 계층 구조 생성 (config 기반)
+    REGIONAL_COUNT   = cfg.num_regions
+    UNIT_COUNT       = cfg.num_units
+    SQUAD_COUNT      = cfg.num_squads
+    DRONES_PER_SQUAD = cfg.num_drones_per_squad
+    HQ_ID            = cfg.headquarters_id
 
     start_net = time.perf_counter()
     # HQ 노드
     cur.execute(f"CREATE (:HQ {{id:'{HQ_ID}'}});")
+
     # Regional
     regionals = [f"R{i:03d}" for i in range(1, REGIONAL_COUNT + 1)]
     for rid in regionals:
         cur.execute(f"CREATE (:Regional {{id:'{rid}'}});")
         cur.execute(f"MATCH (h:HQ {{id:'{HQ_ID}'}}),(r:Regional {{id:'{rid}'}}) CREATE (h)-[:DELEGATES]->(r);")
+
     # Unit
     units = [f"U{i:04d}" for i in range(1, UNIT_COUNT + 1)]
     for idx, uid in enumerate(units):
         parent = regionals[idx % REGIONAL_COUNT]
         cur.execute(f"CREATE (:Unit {{id:'{uid}'}});")
         cur.execute(f"MATCH (r:Regional {{id:'{parent}'}}),(u:Unit {{id:'{uid}'}}) CREATE (r)-[:DELEGATES]->(u);")
+
     # Squad
     squads = [f"S{i:05d}" for i in range(1, SQUAD_COUNT + 1)]
     for idx, sid in enumerate(squads):
         parent = units[idx % UNIT_COUNT]
         cur.execute(f"CREATE (:Squad {{id:'{sid}'}});")
         cur.execute(f"MATCH (u:Unit {{id:'{parent}'}}),(s:Squad {{id:'{sid}'}}) CREATE (u)-[:DELEGATES]->(s);")
+
     # Drone
     drones = []
     for idx, sid in enumerate(squads):
@@ -158,7 +99,12 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
     conn.commit()
     print(f"› 네트워크 생성 완료: {len(regionals)}R, {len(units)}U, {len(squads)}S, {len(drones)}D in {time.perf_counter() - start_net:.2f}s")
 
-    # 5) Issuer 및 VC 노드 삽입
+    # 5) Drone hqId 설정
+    cur.execute(f"MATCH (d:Drone) SET d.hqId = '{HQ_ID}';")
+    conn.commit()
+    print(f"› Drone hqId 초기 설정 완료: {len(drones)}건 처리")
+
+    # 6) Issuer 및 VC 노드 삽입
     priv_key = load_private_key(cfg.private_key_path)
     issuer_did = f"did:example:{HQ_ID}"
     start_vc = time.perf_counter()
@@ -180,7 +126,7 @@ def setup_database(cfg: TestConfig, private_key, scenario: int, config_path: str
     conn.commit()
     print(f"› VC 및 관계 삽입 완료: {len(drones)}건 in {time.perf_counter() - start_vc:.2f}s")
 
-    # 6) Scenario 완료 로깅
+    # 7) Scenario 완료 로깅
     print(f"› Scenario C-{scenario} 환경 설정 완료: DID/VC 및 Graph 준비 완료")
 
     cur.close()
