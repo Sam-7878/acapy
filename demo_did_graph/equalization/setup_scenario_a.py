@@ -45,7 +45,7 @@ def setup_database(cfg, private_key, scenario):
     cur = conn.cursor()
 
     # (옵션) 세션 단위로 WAL 동기화를 끄면 로드 성능이 향상될 수 있습니다.
-    cur.execute("SET synchronous_commit = OFF;")
+    cur.execute("SET synchronous_commit = ON;")
     conn.commit()
     print("› synchronous_commit 설정 OFF")
 

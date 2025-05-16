@@ -45,7 +45,7 @@ def setup_database(cfg: TestConfig, private_key, scenario: int):
     cur = conn.cursor()
 
     # 0) 성능 최적화: WAL 동기화 비활성화
-    cur.execute("SET synchronous_commit = OFF;")
+    cur.execute("SET synchronous_commit = ON;")
     conn.commit()
     print("› synchronous_commit 설정 OFF")
 

@@ -33,9 +33,9 @@ def setup_database(cfg: TestConfig, private_key, scenario: int):
     cur = conn.cursor()
 
     # 0) 성능 최적화: WAL 동기화 끄기
-    cur.execute("SET synchronous_commit = OFF;")
+    cur.execute("SET synchronous_commit = ON;")
     conn.commit()
-    print("› synchronous_commit OFF 설정 완료")
+    print("› synchronous_commit ON 설정 완료")
 
     # 1) 그래프 초기화: 드롭 & 생성
     cur.execute("DROP GRAPH IF EXISTS vc_graph CASCADE;")

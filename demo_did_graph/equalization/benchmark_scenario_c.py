@@ -50,7 +50,7 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, scale_up_nodes, depths
         # 3) 벤치마크용 커넥션 재생성 및 graph_path 재설정
         conn = psycopg.connect(**cfg.db_params)
         cur = conn.cursor()
-        cur.execute("SET synchronous_commit = OFF;")
+        cur.execute("SET synchronous_commit = ON;")
         cur.execute("SET graph_path = vc_graph;")
 
         # 최신 Drone ID 목록 조회
@@ -199,7 +199,7 @@ if __name__ == '__main__':
     conn = psycopg.connect(**cfg.db_params)
     cur = conn.cursor()
     cur.execute("SET graph_path = vc_graph;")
-    print("› synchronous_commit OFF 설정 완료")
+    print("› synchronous_commit ON 설정 완료")
 
     # private key 로드
     private_key = load_private_key(cfg.private_key_path)

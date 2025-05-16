@@ -204,8 +204,8 @@ if __name__ == '__main__':
     conn = psycopg.connect(**cfg.db_params)
     cur = conn.cursor()
     # WAL 동기화(off) → 커밋 대기시간 제거
-    cur.execute("SET synchronous_commit = OFF;")
-    print("› synchronous_commit OFF 설정 완료")
+    cur.execute("SET synchronous_commit = ON;")
+    print("› synchronous_commit ON 설정 완료")
 
     rows = []
     if args.scenario == '1':

@@ -184,8 +184,8 @@ if __name__ == '__main__':
     conn = psycopg.connect(**cfg.db_params)
     cur = conn.cursor()
     # 커밋 동기화(off) 설정: COMMIT 시 디스크 동기화 대기 없이 반환
-    cur.execute("SET synchronous_commit = OFF;")
-    print("› synchronous_commit OFF 설정 완료")
+    cur.execute("SET synchronous_commit = ON;")
+    print("› synchronous_commit ON 설정 완료")
 
     # 결과 저장용 리스트
     rows = []
