@@ -17,7 +17,7 @@
   },
   "headquarters_id": "HQ",
   "private_key_path": "common/keys/commander_private.pem",
-  "data_result_path": "data/result/equalization",
+  "data_result_path": "data/result/web_of_trust",
   "scale_up_nodes": [2000, 5000, 10000],
   "depths": [4, 8, 12],
   "iterations": 200,
@@ -60,6 +60,35 @@
       },
       "network": {
         "full_partition": true
+      }
+    },
+    "4": {
+      "web_of_trust": {
+        "max_path_lengths": [4, 8, 12],
+        "anchor_did": "HQ"
+      },
+      "network": {
+        "delay_ms_range": [50, 200],
+        "packet_loss_rate": 0.01,
+        "link_partition": {
+          "interval_sec": 20,
+          "drop_percent": 0.05,
+          "recover_after_sec": 3
+        }
+      }
+    },
+    "5": {
+      "abac": {
+        "max_depths": [4, 8, 12]
+      },
+      "network": {
+        "delay_ms_range": [50, 200],
+        "packet_loss_rate": 0.01,
+        "link_partition": {
+          "interval_sec": 20,
+          "drop_percent": 0.05,
+          "recover_after_sec": 3
+        }
       }
     }
   }

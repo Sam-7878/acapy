@@ -15,6 +15,15 @@ def create_did() -> str:
 def generate_did() -> str:
     return f"did:example:{uuid.uuid4()}"
 
+def create_prefixed_did(entity_type: str, index: int) -> str:
+    """
+    entity_type과 index 기반으로 명시적 DID 생성
+    예: create_prefixed_did('drone', 5) → did:example:drone-000005-<uuid>
+    """
+    suffix = uuid.uuid4().hex[:8]
+    return f"did:example:{entity_type}-{index:06d}-{suffix}"
+
+
 # ----------------------------
 # VC 생성
 # ----------------------------
@@ -41,6 +50,37 @@ def create_vc(issuer_did: str, subject_did: str, data: dict, private_key) -> dic
         "signatureValue": signature.hex()
     }
     return vc
+
+def create_vc_simple(data: dict, private_key, issuer_did: str) -> dict:
+    """
+    간단한 VC 문서 생성 함수.
+    - data: credentialSubject 필드에 들어갈 dict
+    - private_key: Ed25519 개인키 객체
+    - issuer_did: VC 발행자 DID
+
+    반환값 vc_doc 구조:
+      {
+        "id": "urn:uuid:...',         # VC 고유 ID
+        "payload": {...},             # 원본 data
+        "signature": <bytes>          # payload에 대한 Ed25519 서명
+      }
+    """
+    # 1) VC ID 생성
+    vc_id = f"urn:uuid:{uuid.uuid4()}"
+    # 2) 페이로드(문자열) 직렬화
+    payload_json = json.dumps({
+        "id": vc_id,
+        "issuer": issuer_did,
+        "credentialSubject": data
+    }, sort_keys=True)
+    # 3) 서명
+    signature = private_key.sign(payload_json.encode('utf-8'))
+    # 4) 결과 반환
+    return {
+        "id": vc_id,
+        "payload": data,
+        "signature": signature
+    }
 
 # ----------------------------
 # VC 검증

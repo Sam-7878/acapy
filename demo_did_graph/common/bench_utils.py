@@ -56,3 +56,33 @@ def benchmark_query(cur, query: str, iterations: int) -> Tuple[float, float, flo
     p99 = statistics.quantiles(latencies, n=100)[98]
     tps = iterations / elapsed_all if elapsed_all > 0 else 0.0
     return p50, p95, p99, tps
+
+def benchmark_query_parametric(cur, query: str, iterations: int, params: tuple) -> Tuple[float, float, float, float]:
+    """
+    Executes a parameterized SQL query multiple times with the given parameters, measuring latencies.
+
+    Parameters:
+      cur: psycopg cursor
+      query: SQL query with placeholders
+      iterations: number of repetitions
+      params: query parameters as a tuple
+
+    Returns:
+      p50, p95, p99 latencies (in seconds), and throughput (queries per second)
+    """
+    import time, statistics
+    latencies = []
+    start_all = time.perf_counter()
+
+    for _ in range(iterations):
+        t0 = time.perf_counter()
+        cur.execute(query, params)
+        cur.fetchone()
+        latencies.append(time.perf_counter() - t0)
+
+    elapsed_all = time.perf_counter() - start_all
+    p50 = statistics.quantiles(latencies, n=100)[49]
+    p95 = statistics.quantiles(latencies, n=100)[94]
+    p99 = statistics.quantiles(latencies, n=100)[98]
+    tps = iterations / elapsed_all if elapsed_all > 0 else 0.0
+    return p50, p95, p99, tps
