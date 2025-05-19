@@ -109,7 +109,7 @@ if __name__ == '__main__':
     # 벤치파라미터
     scale_up_nodes = cfg_json.get('scale_up_nodes', [100000, 500000, 1000000])
     depths = cfg_json.get('depths', [4, 8, 12, 16])
-    iterations = cfg_json.get('iterations', 1000)
+    iterations = cfg_json.get('iterations', 100)
 
     # DB 연결
     conn = psycopg.connect(**cfg.db_params)

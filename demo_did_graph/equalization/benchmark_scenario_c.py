@@ -192,13 +192,15 @@ if __name__ == '__main__':
 
     scale_up_nodes = cfg_json.get('scale_up_nodes', [])
     depths = cfg_json.get('depths', [])
-    iterations = cfg_json.get('iterations', 1000)
+    iterations = cfg_json.get('iterations', 100)
     params = cfg.scenario_params.get(args.scenario, {})
 
     # DB 연결 및 초기 설정
     conn = psycopg.connect(**cfg.db_params)
     cur = conn.cursor()
     cur.execute("SET graph_path = vc_graph;")
+    cur.execute("SET synchronous_commit = ON;")
+    conn.commit()
     print("› synchronous_commit ON 설정 완료")
 
     # private key 로드

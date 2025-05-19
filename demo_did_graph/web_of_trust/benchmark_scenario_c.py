@@ -15,7 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 from common.load_config import TestConfig
-from common.bench_utils import benchmark_query
+from common.bench_utils import benchmark_query, benchmark_query_parametric
 from setup_scenario_c import setup_database
 from common.did_utils import load_private_key
 
@@ -37,30 +37,25 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, scale_up_nodes, depths
     interval = params['turn_taking']['interval_sec']
     ratio = params['turn_taking']['update_ratio']
 
-    for total in scale_up_nodes:
-        # 스케일업마다 그래프 초기화
-        # 1) 벤치마크용 커넥션/커서 닫기 → 락 해제
-        cur.close()
-        conn.close()
-
+    for num_nodes in scale_up_nodes:
         # 2) 그래프 DROP/CREATE (별도 커넥션)
-        print(f"\n-- Init DB : update_count based on {total} nodes (Turn-Taking) --")
+        print(f"\n-- Init DB : update_count based on {num_nodes} nodes (Turn-Taking) --")
         setup_database(cfg, private_key, int(args.scenario))
 
         # 3) 벤치마크용 커넥션 재생성 및 graph_path 재설정
         conn = psycopg.connect(**cfg.db_params)
         cur = conn.cursor()
-        cur.execute("SET synchronous_commit = ON;")
         cur.execute("SET graph_path = vc_graph;")
 
         # 최신 Drone ID 목록 조회
         cur.execute("MATCH (d:Drone) RETURN d.id;")
         drones_list = [r[0] for r in cur.fetchall()]
 
-        print(f"\n-- Scale-up: update_count based on {total} nodes (Turn-Taking) --")
+        print(f"\n-- Scale-up: update_count based on {num_nodes} nodes (Turn-Taking) --")
+        
         for depth in depths:
             # 업데이트 대상 수 계산
-            update_count = int(total * ratio)
+            update_count = int(num_nodes * ratio)
             selected = random.sample(drones_list, update_count)
 
             # Delegates 엣지 배치 업데이트
@@ -77,22 +72,25 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, scale_up_nodes, depths
             time.sleep(interval)
             # 워밍업
             query = get_bench_query(cfg.headquarters_id, depth)
+            # ─── 캐시 워밍업: 첫 실행으로 OS/DB 버퍼 채우기 ───
             cur.execute(query)
             cur.fetchone()
+
             # 벤치마크
             p50, p95, p99, tps = benchmark_query(cur, query, iterations)
+
             print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
             rows.append({
                 'scenario': f'C-{args.scenario}',
-                'scale_up': total,
+                'scale_up': num_nodes,
                 'depth': depth,
                 'p50_ms': p50*1000,
                 'p95_ms': p95*1000,
                 'p99_ms': p99*1000,
                 'tps': tps
             })
-    cur.close()
-    conn.close()
+        cur.close()
+        conn.close()
 
 
 def scenario2_chain_churn(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows, private_key):
@@ -120,7 +118,9 @@ def scenario2_chain_churn(cur, conn, cfg, params, scale_up_nodes, depths, iterat
         query = get_bench_query(cfg.headquarters_id, depth)
         cur.execute(query)
         cur.fetchone()
+
         p50, p95, p99, tps = benchmark_query(cur, query, iterations)
+
         print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
         rows.append({
             'scenario': f'C-{args.scenario}',
@@ -166,7 +166,9 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, scale_up_nodes, d
     query = get_bench_query(cfg.headquarters_id, depths[0])
     cur.execute(query)
     cur.fetchone()
+
     p50, p95, p99, tps = benchmark_query(cur, query, recon_sync)
+
     print(f"Reconciliation → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
     rows.append({
         'scenario': f'C-{args.scenario}',
@@ -191,19 +193,30 @@ def scenario4_web_of_trust(cur, cfg, params, iterations, rows):
 
     # 클라이언트 후보 추출
     cur.execute("MATCH (e:Entity) WHERE e.did <> '{0}' RETURN e.did;".format(anchor))
-    clients = [r[0] for r in cur.fetchall()]
+    candidates = [r[0] for r in cur.fetchall()]
 
     for length in lengths:
-        client = random.choice(clients)
+        client = random.choice(candidates)
         q = f"""
         MATCH path=(c:Entity {{did:'{client}'}})-[:CROSSED_SIGNED*1..{length}]->(a:Entity {{did:'{anchor}'}})
         RETURN count(path) AS path_count;
         """
-        cur.execute(q); cur.fetchone()
+        cur.execute(q)
+        cur.fetchone()
+
         p50, p95, p99, tps = benchmark_query(cur, q, iterations)
+        # p50, p95, p99, tps = benchmark_query_parametric(cur, q, iterations, params=(client, length, anchor))
 
         print(f"[WebTrust len={length}] P50={p50*1000:.2f}ms, p95={p95*1000:.2f}ms, p99={p99*1000:.2f}ms, TPS={tps:.2f}")
-        rows.append({'scenario':'C-4', 'scale_up':'', 'length':length, 'p50_ms':p50*1000, 'p95_ms':p95*1000, 'p99_ms':p99*1000, 'tps':tps})
+        rows.append({
+            'scenario':'C-4', 
+            'scale_up':'', 
+            'length':length, 
+            'p50_ms':p50*1000, 
+            'p95_ms':p95*1000, 
+            'p99_ms':p99*1000, 
+            'tps':tps
+        })
 
     return cur, conn
 
@@ -226,12 +239,22 @@ def scenario5_abac(cur, cfg, params, iterations, rows):
         MATCH (:AppUser {{did:'{user}'}})-[:MEMBER_OF*1..{depth}]->(g:AppGroup)-[:HAS_PERMISSION]->(r:Resource {{id:'{resource}'}})
         RETURN count(r) AS allowed;
         """
-        cur.execute(q); cur.fetchone()
+        cur.execute(q)
+        cur.fetchone()
         
         p50, p95, p99, tps = benchmark_query(cur, q, iterations)
+        # p50, p95, p99, tps = benchmark_query_parametric(cur, q, iterations, params=(user, depth, resource))
 
         print(f"[ABAC depth={depth}] P50={p50*1000:.2f}ms, p95={p95*1000:.2f}ms, p99={p99*1000:.2f}ms, TPS={tps:.2f}")
-        rows.append({'scenario':'C-5', 'scale_up':'', 'depth':depth, 'p50_ms':p50*1000, 'p95_ms':p95*1000, 'p99_ms':p99*1000, 'tps':tps})
+        rows.append({
+            'scenario':'C-5', 
+            'scale_up':'', 
+            'depth':depth, 
+            'p50_ms':p50*1000, 
+            'p95_ms':p95*1000, 
+            'p99_ms':p99*1000, 
+            'tps':tps
+        })
 
     return cur, conn
 
@@ -249,13 +272,15 @@ if __name__ == '__main__':
 
     scale_up_nodes = cfg_json.get('scale_up_nodes', [])
     depths = cfg_json.get('depths', [])
-    iterations = cfg_json.get('iterations', 1000)
+    iterations = cfg_json.get('iterations', 100)
     params = cfg.scenario_params.get(args.scenario, {})
 
     # DB 연결 및 초기 설정
     conn = psycopg.connect(**cfg.db_params)
     cur = conn.cursor()
     cur.execute("SET graph_path = vc_graph;")
+    cur.execute("SET synchronous_commit = ON;")
+    conn.commit()
     print("› synchronous_commit ON 설정 완료")
 
     # private key 로드

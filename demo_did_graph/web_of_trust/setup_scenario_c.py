@@ -39,9 +39,9 @@ def setup_dynamic_graph(cur, cfg, private_key):
     cur.connection.commit()
 
     # VLABEL / ELABEL / INDEX
-    for lbl in ("HQ","Drone","VC","VC_Issuer"): cur.execute(f"CREATE VLABEL IF NOT EXISTS {lbl};")
-    for et in ("DELEGATES","ASSERTS"): cur.execute(f"CREATE ELABEL IF NOT EXISTS {et};")
-    for label, prop in [("HQ","id"),("Drone","id"),("VC","vc_json")]:
+    for lbl in ("HQ", "Drone", "VC", "VC_Issuer"): cur.execute(f"CREATE VLABEL IF NOT EXISTS {lbl};")
+    for et in ("DELEGATES", "ASSERTS"): cur.execute(f"CREATE ELABEL IF NOT EXISTS {et};")
+    for label, prop in [("HQ", "id"), ("Drone","id"), ("VC","vc_json")]:
         cur.execute(f"CREATE PROPERTY INDEX ON {label}({prop});")
     cur.connection.commit()
 
@@ -184,7 +184,7 @@ def setup_database(cfg: TestConfig, private_key, scenario: int):
     conn = psycopg.connect(**cfg.db_params)
     cur = conn.cursor()
     # 성능 최적화
-    cur.execute("SET synchronous_commit = OFF;")
+    cur.execute("SET synchronous_commit = ON;")
     conn.commit()
 
     if scenario in (1,2,3):

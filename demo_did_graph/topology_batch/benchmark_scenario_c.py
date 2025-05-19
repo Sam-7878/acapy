@@ -229,7 +229,7 @@ if __name__ == '__main__':
 
     scale_up_nodes = cfg_json.get('scale_up_nodes', [])
     depths = cfg_json.get('depths', [])
-    iterations = cfg_json.get('iterations', 1000)
+    iterations = cfg_json.get('iterations', 100)
     params = cfg.scenario_params.get(args.scenario, {})
 
     conn = psycopg.connect(**cfg.db_params)

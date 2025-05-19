@@ -43,11 +43,13 @@ def benchmark_query(cur, query: str, iterations: int) -> Tuple[float, float, flo
     """
     latencies = []
     start_all = time.perf_counter()
+
     for _ in range(iterations):
         t0 = time.perf_counter()
         cur.execute(query)
         cur.fetchone()
         latencies.append(time.perf_counter() - t0)
+
     elapsed_all = time.perf_counter() - start_all
 
     # Compute percentiles
@@ -81,6 +83,7 @@ def benchmark_query_parametric(cur, query: str, iterations: int, params: tuple) 
         latencies.append(time.perf_counter() - t0)
 
     elapsed_all = time.perf_counter() - start_all
+    
     p50 = statistics.quantiles(latencies, n=100)[49]
     p95 = statistics.quantiles(latencies, n=100)[94]
     p99 = statistics.quantiles(latencies, n=100)[98]

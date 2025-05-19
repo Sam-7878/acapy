@@ -54,8 +54,8 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
     for num_nodes in nodes:
         print(f"\n-- Scale-up: {num_nodes} nodes (Turn-Taking) --")
         for depth in depths:
-            update_count = int(cfg.num_drones * ratio)
-            drones = random.sample(range(cfg.num_drones), update_count)
+            update_count = int(num_nodes * ratio)
+            drones = random.sample(range(num_nodes), update_count)
 
             # ─── moderate‐sized batch 업데이트 ───
             chunk_size = cfg.chunk_size
@@ -67,9 +67,13 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
                 )
                 conn.commit()
 
-
             time.sleep(interval)
+            # 워밍업
             query = get_bench_query(cfg.headquarters_id, depth)
+            cur.execute(query)
+            cur.fetchone()
+
+            # 벤치마크
             p50, p95, p99, tps = benchmark_query(cur, query, iterations)
             
             print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
@@ -94,17 +98,6 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
         update_count = int(cfg.num_drones * ratio)
         drones = random.sample(range(cfg.num_drones), update_count)
 
-        # for did in drones:
-        #     cur.execute(
-        #         "UPDATE delegation SET hq_id = %s WHERE drone_id = %s",
-        #         (cfg.headquarters_id, did)
-        #     )
-        # 한 번에 다중 레코드 갱신
-        # cur.execute(
-        #     "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-        #     (cfg.headquarters_id, drones)
-        # )
-        # conn.commit()
         # ─── moderate‐sized batch 업데이트 ───
         chunk_size = cfg.chunk_size
         for i in range(0, len(drones), chunk_size):
@@ -115,10 +108,13 @@ def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, row
             )
             conn.commit()
 
-
         time.sleep(interval)
         query = get_bench_query(cfg.headquarters_id, depth)
+        cur.execute(query)
+        cur.fetchone()
+
         p50, p95, p99, tps = benchmark_query(cur, query, iterations)
+
         print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
         rows.append({
             'scenario': 'B-2',
@@ -165,7 +161,11 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, it
 
     print(f"Partition 해제, 동기화 {recon_sync}건 --")
     query = get_bench_query(cfg.headquarters_id, depths[0])
+    cur.execute(query)
+    cur.fetchone()
+
     p50, p95, p99, tps = benchmark_query(cur, query, recon_sync)
+
     print(f"Reconciliation → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
     rows.append({
         'scenario': 'B-3',
@@ -184,25 +184,47 @@ def scenario4_web_of_trust(cur, cfg, params, iterations, rows):
 
     cur.execute("SELECT DISTINCT from_did FROM web_trust WHERE from_did <> %s;", (anchor,))
     candidates = [r[0] for r in cur.fetchall()]
+
     for length in lengths:
-        start = random.choice(candidates)
+        client = random.choice(candidates)
+        # q = f"""
+        # WITH RECURSIVE trust_path(from_did, to_did, depth) AS (
+        #   SELECT from_did, to_did, 1 FROM web_trust WHERE from_did = %s
+        #   UNION ALL
+        #   SELECT wt.from_did, wt.to_did, tp.depth + 1
+        #     FROM web_trust wt
+        #     JOIN trust_path tp ON wt.from_did = tp.to_did
+        #   WHERE tp.depth < %s
+        # )
+        # SELECT COUNT(*) FROM trust_path WHERE to_did = %s;
+        # """
+        # cur.execute(q, (client, length, anchor))
         q = f"""
         WITH RECURSIVE trust_path(from_did, to_did, depth) AS (
-          SELECT from_did, to_did, 1 FROM web_trust WHERE from_did = %s
+          SELECT from_did, to_did, 1 FROM web_trust WHERE from_did = '{client}'
           UNION ALL
           SELECT wt.from_did, wt.to_did, tp.depth + 1
             FROM web_trust wt
             JOIN trust_path tp ON wt.from_did = tp.to_did
-          WHERE tp.depth < %s
+          WHERE tp.depth < '{length}'
         )
-        SELECT COUNT(*) FROM trust_path WHERE to_did = %s;
+        SELECT COUNT(*) FROM trust_path WHERE to_did = '{anchor}';
         """
-        cur.execute(q, (start, length, anchor)); cur.fetchone()
-        p50, p95, p99, tps = benchmark_query_parametric(cur, q, iterations, params=(start, length, anchor))
-        # p50, p95, p99, tps = benchmark_query(cur, q, iterations)
+        cur.execute(q)
+        cur.fetchone()
+
+        # p50, p95, p99, tps = benchmark_query_parametric(cur, q, iterations, params=(client, length, anchor))
+        p50, p95, p99, tps = benchmark_query(cur, q, iterations)
         
         print(f"[WebTrust len={length}] P50={p50*1000:.2f}ms, p95={p95*1000:.2f}ms, p99={p99*1000:.2f}ms, TPS={tps:.2f}")
-        rows.append({'scenario':'B-4', 'length':length, 'p50_ms':p50*1000, 'p95_ms':p95*1000, 'p99_ms':p99*1000, 'tps':tps})
+        rows.append({
+            'scenario':'B-4', 
+            'length':length, 
+            'p50_ms':p50*1000, 
+            'p95_ms':p95*1000, 
+            'p99_ms':p99*1000, 
+            'tps':tps
+        })
 
 
 # ─────────────────────────────────────────────────────────
@@ -217,22 +239,38 @@ def scenario5_abac(cur, cfg, params, iterations, rows):
     for depth in depths:
         user = random.choice(users)
         resource = random.choice(resources)
+        # q = f"""
+        # WITH RECURSIVE groups(user_did, group_id, lvl) AS (
+        #   SELECT user_did, group_id, 1 FROM abac_member WHERE user_did = %s
+        #   UNION ALL
+        #   SELECT g.user_did, s.to_id, g.lvl + 1
+        #     FROM abac_subgroup s
+        #     JOIN groups g ON s.from_id = g.group_id
+        #   WHERE g.lvl < %s
+        # )
+        # SELECT COUNT(*) FROM groups g
+        #   JOIN abac_permission p ON g.group_id = p.group_id
+        #  WHERE p.resource_id = %s;
+        # """
+        # cur.execute(q, (user, depth, resource))
         q = f"""
         WITH RECURSIVE groups(user_did, group_id, lvl) AS (
-          SELECT user_did, group_id, 1 FROM abac_member WHERE user_did = %s
+          SELECT user_did, group_id, 1 FROM abac_member WHERE user_did = '{user}'
           UNION ALL
           SELECT g.user_did, s.to_id, g.lvl + 1
             FROM abac_subgroup s
             JOIN groups g ON s.from_id = g.group_id
-          WHERE g.lvl < %s
+          WHERE g.lvl < '{depth}'
         )
         SELECT COUNT(*) FROM groups g
           JOIN abac_permission p ON g.group_id = p.group_id
-         WHERE p.resource_id = %s;
+         WHERE p.resource_id = '{resource}';
         """
-        cur.execute(q, (user, depth, resource)); cur.fetchone()
+        cur.execute(q)
+        cur.fetchone()
 
-        p50,p95,p99,tps = benchmark_query_parametric(cur, q, iterations, params=(user, depth, resource))
+        # p50, p95, p99, tps = benchmark_query_parametric(cur, q, iterations, params=(user, depth, resource))
+        p50, p95, p99, tps = benchmark_query(cur, q, iterations)
 
         print(f"[ABAC depth={depth}] P50={p50*1000:.2f}ms, p95={p95*1000:.2f}ms, p99={p99*1000:.2f}ms, TPS={tps:.2f}")
         rows.append({'scenario':'B-5','depth':depth,'p50_ms':p50*1000,'p95_ms':p95*1000,'p99_ms':p99*1000,'tps':tps})
@@ -253,7 +291,7 @@ if __name__ == '__main__':
 
     scale_up_nodes = cfg_json.get('scale_up_nodes', [])
     depths = cfg_json.get('depths', [])
-    iterations = cfg_json.get('iterations', 1000)
+    iterations = cfg_json.get('iterations', 100)
     params = cfg.scenario_params.get(args.scenario, {})
 
     conn = psycopg.connect(**cfg.db_params)
