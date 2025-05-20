@@ -53,6 +53,8 @@ class TestConfig:
         self.headquarters_id = data.get('headquarters_id')
         self.private_key_path = data.get('private_key_path')
         self.data_result_path = data.get('data_result_path')
+        self.scale_up_nodes = data.get('scale_up_nodes', [100, 500, 1000])
+        self.depths = data.get('scale_up_nodes', [2, 4, 6, 8])
         self.iterations = data.get('iterations', 100)
         self.chunk_size = data.get('chunk_size', 500)
         

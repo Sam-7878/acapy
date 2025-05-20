@@ -17,7 +17,7 @@
   },
   "headquarters_id": "HQ",
   "private_key_path": "common/keys/commander_private.pem",
-  "data_result_path": "data/result/web_of_trust",
+  "data_result_path": "data/result/05_abac",
   "scale_up_nodes": [2000, 5000, 10000],
   "depths": [4, 8, 12],
   "iterations": 400,

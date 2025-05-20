@@ -31,32 +31,55 @@ def get_bench_query(hq_id: str, max_depth: int) -> str:
 
 def scenario1_realtime_turntaking(cfg, params, iterations, rows, private_key):
     # 단일 커넥션으로 전체 스케일 단계 수행 (비최적화)
-    conn = psycopg.connect(**cfg.db_params)
-    cur = conn.cursor()
+    scale_up_nodes = cfg.scale_up_nodes
+    depths = cfg.depths
+    ratio = params['1']['turn_taking']['update_ratio']
 
-    hq = cfg.headquarters_id
-    scale_nodes = params['turn_taking']['scale_up_nodes']
-    depths = params['turn_taking']['depths']
-    ratio = params['turn_taking']['update_ratio']
+    for num_nodes in scale_up_nodes:
+        # 2) 그래프 DROP/CREATE (별도 커넥션)
+        print(f"\n-- Init DB : update_count based on {num_nodes} nodes (Turn-Taking) --")
+        setup_database(cfg, private_key, 1)
 
-    for nodes in scale_nodes:
+        # 3) 벤치마크용 커넥션 재생성 및 graph_path 재설정
+        conn = psycopg.connect(**cfg.db_params)
+        cur = conn.cursor()
+        cur.execute("SET graph_path = vc_graph;")
+
+        # 최신 Drone ID 목록 조회
+        cur.execute("MATCH (d:Drone) RETURN d.id;")
+        drones_list = [r[0] for r in cur.fetchall()]
+
+        print(f"\n-- Scale-up: update_count based on {num_nodes} nodes (Turn-Taking) --")
+        
         for depth in depths:
-            update_count = int(nodes * ratio)
-            ids = random.sample(range(nodes), update_count)
-            for i in ids:
+            # 업데이트 대상 수 계산
+            update_count = int(num_nodes * ratio)
+            selected = random.sample(drones_list, update_count)
+
+            for i in selected:
                 did = f"drone:{i}"
                 cur.execute(f"MATCH ()-[r:DELEGATES]->(d:Drone {{id:'{did}'}}) DELETE r;")
-            for i in ids:
+            for i in selected:
                 did = f"drone:{i}"
-                cur.execute(f"MATCH (hq:HQ {{id:'{hq}'}}),(d:Drone {{id:'{did}'}}) CREATE (hq)-[:DELEGATES]->(d);")
+                cur.execute(f"MATCH (hq:HQ {{id:'{cfg.headquarters_id}'}}),(d:Drone {{id:'{did}'}}) CREATE (hq)-[:DELEGATES]->(d);")
             conn.commit()
 
-            query = get_bench_query(hq, depth)
+            query = get_bench_query(cfg.headquarters_id, depth)
+            # 벤치마크
             p50, p95, p99, tps = benchmark_query(cur, query, iterations)
-            rows.append(["scenario1", nodes, depth, p50, p95, p99, tps])
 
-    cur.close()
-    conn.close()
+            print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
+            rows.append({
+                'scenario': f'B-1',
+                'scale_up': num_nodes,
+                'depth': depth,
+                'p50_ms': p50*1000,
+                'p95_ms': p95*1000,
+                'p99_ms': p99*1000,
+                'tps': tps
+            })
+        cur.close()
+        conn.close()
 
 
 def scenario2_chain_churn(cfg, params, iterations, rows, private_key):

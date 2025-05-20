@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # benchmark_scenario_b.py
-# Scenario B Dynamic Topology Benchmark: DID + VC + PostgreSQL RDB
+# Scenario B Benchmark: DID 인증 + RDB 기반
 
 import time
 import psycopg
@@ -11,74 +11,69 @@ import csv
 from pathlib import Path
 import sys
 
-# 프로젝트 루트를 PYTHONPATH에 추가 (common 모듈 로드용)
+# 프로젝트 루트를 PYTHONPATH에 추가
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT))
 from common.load_config import TestConfig
+from common.did_utils import load_private_key
 from common.bench_utils import benchmark_query, benchmark_query_parametric
+from setup_scenario_b import setup_database
 
 
-# 수정된 get_bench_query 함수 (VC 개수 기반)
-def get_bench_query(start_hq: str, depth: int) -> str:
-    """
-    VC 기준으로 카운트:
-    delegation 테이블을 재귀적으로 따라가며
-    drone_id → vc_test.subject_did 를 매칭해 VC 개수를 센다.
-    """
-    return f"""
-    WITH RECURSIVE chain(drone_id, hq_id, lvl) AS (
-      SELECT drone_id, hq_id, 1 AS lvl
-        FROM delegation
-       WHERE hq_id = '{start_hq}'
-    UNION ALL
-      SELECT d.drone_id, d.hq_id, c.lvl + 1
-        FROM delegation d
-        JOIN chain c ON d.hq_id = c.drone_id::TEXT
-       WHERE c.lvl < {depth}
-    )
-    SELECT COUNT(*) AS vc_count
-      FROM chain c
-      JOIN vc_test v ON v.subject_did = c.drone_id::TEXT;
-    """
+def load_drones(cur):
+    # delegation 테이블에서 등록된 드론 DID 목록을 로드
+    cur.execute("SELECT drone_id FROM delegation;")
+    rows = cur.fetchall()
+    return [row[0] for row in rows]
 
 
+def scenario1_realtime_turntaking(cfg, params, iterations, rows, private_key):
+    conn = psycopg.connect(**cfg.db_params)
+    cur = conn.cursor()
 
-# ─────────────────────────────────────────────────────────
-# Scenario별 워크로드 함수 정의
-# ─────────────────────────────────────────────────────────
+    # 드론 목록 로드
+    drones = load_drones(cur)
+    hq = cfg.headquarters_id
+    depths = cfg.depths
+    scale_nodes = cfg.scale_up_nodes
+    ratio = params['1']['turn_taking']['update_ratio']
 
-def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterations, rows):
-    interval = params['turn_taking']['interval_sec']
-    ratio = params['turn_taking']['update_ratio']
+    for num_nodes in scale_nodes:
+        print(f"\n-- Scale-up: update_count based on {num_nodes} nodes (Turn-Taking) --")
 
-    for num_nodes in nodes:
-        print(f"\n-- Scale-up: {num_nodes} nodes (Turn-Taking) --")
         for depth in depths:
-            update_count = int(num_nodes * ratio)
-            drones = random.sample(range(num_nodes), update_count)
-
-            # ─── moderate‐sized batch 업데이트 ───
-            chunk_size = cfg.chunk_size
-            for i in range(0, len(drones), chunk_size):
-                chunk = drones[i:i+chunk_size]
+            update_count = int(len(drones) * ratio)
+            # 샘플링: DB 로드된 DID 리스트 사용
+            sample_dids = random.sample(drones, update_count)
+            # 위임 관계 삭제
+            for did in sample_dids:
                 cur.execute(
-                    "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-                    (cfg.headquarters_id, chunk)
+                    "DELETE FROM delegation WHERE drone_id = %s AND hq_id = %s;",
+                    (did, hq)
                 )
-                conn.commit()
+            # 위임 관계 생성
+            for did in sample_dids:
+                cur.execute(
+                    "INSERT INTO delegation(drone_id, hq_id) VALUES(%s, %s)"
+                    " ON CONFLICT (drone_id) DO UPDATE SET hq_id = EXCLUDED.hq_id;",
+                    (did, hq)
+                )
+            conn.commit()
 
-            time.sleep(interval)
-            # 워밍업
-            query = get_bench_query(cfg.headquarters_id, depth)
-            cur.execute(query)
-            cur.fetchone()
+            # 벤치마크 위한 쿼리
+            sql = f"WITH RECURSIVE chain(drone_id, hq_id, lvl) AS ("
+            sql += f" SELECT drone_id, hq_id, 1 FROM delegation WHERE hq_id = '{hq}' "
+            sql += f" UNION ALL "
+            sql += f" SELECT d.drone_id, d.hq_id, lvl+1 FROM chain c "
+            sql += f" JOIN delegation d ON c.drone_id = d.hq_id "
+            sql += f" WHERE lvl < {depth}) SELECT count(*) FROM chain;"
 
             # 벤치마크
-            p50, p95, p99, tps = benchmark_query(cur, query, iterations)
-            
+            p50, p95, p99, tps = benchmark_query(cur, sql, iterations)
+
             print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
             rows.append({
-                'scenario': 'B-1',
+                'scenario': f'B-1',
                 'scale_up': num_nodes,
                 'depth': depth,
                 'p50_ms': p50*1000,
@@ -86,258 +81,158 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
                 'p99_ms': p99*1000,
                 'tps': tps
             })
+    cur.close()
+    conn.close()
 
 
-def scenario2_chain_churn(cur, conn, cfg, params, nodes, depths, iterations, rows):
-    cycle = params['chain_churn']['depth_cycle']
-    interval = params['chain_churn']['cycle_interval_sec']
-    ratio = params['chain_churn']['update_ratio']
+def scenario2_chain_churn(cfg, params, iterations, rows, private_key):
+    conn = psycopg.connect(**cfg.db_params)
+    cur = conn.cursor()
 
-    for depth in cycle:
-        print(f"\n-- Chain-Churn: depth={depth} --")
-        update_count = int(cfg.num_drones * ratio)
-        drones = random.sample(range(cfg.num_drones), update_count)
+    drones = load_drones(cur)
+    depths = params['2']['chain_churn']['depths']
+    ratio = params['2']['chain_churn']['churn_ratio']
+    scale_nodes = params['2']['chain_churn']['scale_up_nodes']
 
-        # ─── moderate‐sized batch 업데이트 ───
-        chunk_size = cfg.chunk_size
-        for i in range(0, len(drones), chunk_size):
-            chunk = drones[i:i+chunk_size]
-            cur.execute(
-                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-                (cfg.headquarters_id, chunk)
-            )
+    for nodes in scale_nodes:
+        for depth in depths:
+            churn_count = int(len(drones) * ratio)
+            sample_dids = random.sample(drones, churn_count)
+            # 체인 분리 및 재결합
+            for did in sample_dids:
+                cur.execute("DELETE FROM delegation WHERE drone_id = %s;", (did,))
+            for did in sample_dids:
+                cur.execute(
+                    "INSERT INTO delegation(drone_id, hq_id) VALUES(%s, %s)"
+                    " ON CONFLICT (drone_id) DO UPDATE SET hq_id = EXCLUDED.hq_id;",
+                    (did, cfg.headquarters_id)
+                )
             conn.commit()
 
-        time.sleep(interval)
-        query = get_bench_query(cfg.headquarters_id, depth)
-        cur.execute(query)
-        cur.fetchone()
+            sql = f"WITH RECURSIVE chain(drone_id, hq_id, lvl) AS ("
+            sql += f" SELECT drone_id, hq_id, 1 FROM delegation WHERE hq_id = '{cfg.headquarters_id}' "
+            sql += f" UNION ALL SELECT d.drone_id, d.hq_id, lvl+1 FROM chain c "
+            sql += f" JOIN delegation d ON c.drone_id = d.hq_id WHERE lvl < {depth}) SELECT count(*) FROM chain;"
 
-        p50, p95, p99, tps = benchmark_query(cur, query, iterations)
+            p50, p95, p99, tps = benchmark_query(cur, sql, iterations)
+            rows.append(["scenario2", nodes, depth, p50, p95, p99, tps])
 
-        print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
-        rows.append({
-            'scenario': 'B-2',
-            'scale_up': '',
-            'depth': depth,
-            'p50_ms': p50*1000,
-            'p95_ms': p95*1000,
-            'p99_ms': p99*1000,
-            'tps': tps
-        })
+    cur.close()
+    conn.close()
 
 
-def scenario3_partition_reconciliation(cur, conn, cfg, params, nodes, depths, iterations, rows):
-    split = params['partition_reconciliation']['split_ratio']
-    split_duration = params['partition_reconciliation']['split_duration_sec']
-    recon_sync = params['partition_reconciliation']['post_reconcile_sync_requests']
-    total = cfg.num_drones
-    boundary = int(total * split[0])
-    print(f"\n-- Partition: A={boundary}, B={total-boundary}, duration={split_duration}s --")
+def scenario3_partition_reconciliation(cfg, params, iterations, rows, private_key):
+    conn = psycopg.connect(**cfg.db_params)
+    cur = conn.cursor()
 
-    start = time.time()
-    first = list(range(boundary))
-    second = list(range(boundary, total))
+    drones = load_drones(cur)
+    partitions = params['3']['partition_reconciliation']['partitions']
+    depths = params['3']['partition_reconciliation']['depths']
+    syncs = params['3']['partition_reconciliation']['post_reconcile_sync_requests']
 
-    # ─── moderate‐sized batch 파티션 A/B 업데이트 ───
-    chunk_size = cfg.chunk_size
-    while time.time() - start < split_duration:
-        # Partition A
-        for i in range(0, len(first), chunk_size):
-            chunk = first[i:i+chunk_size]
-            cur.execute(
-                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-                (cfg.headquarters_id, chunk)
-            )
-        # Partition B
-        for i in range(0, len(second), chunk_size):
-            chunk = second[i:i+chunk_size]
-            cur.execute(
-                "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
-                (cfg.headquarters_id, chunk)
-            )
-        conn.commit()
+    for part in partitions:
+        for depth in depths:
+            # 파티션 왕복 업데이트
+            for did in part:
+                cur.execute("DELETE FROM delegation WHERE drone_id = %s;", (did,))
+                cur.execute(
+                    "INSERT INTO delegation(drone_id, hq_id) VALUES(%s, %s)"
+                    " ON CONFLICT (drone_id) DO UPDATE SET hq_id = EXCLUDED.hq_id;",
+                    (did, cfg.headquarters_id)
+                )
+            conn.commit()
 
+            for _ in range(syncs):
+                sql = f"WITH RECURSIVE chain(drone_id, hq_id, lvl) AS ("
+                sql += f" SELECT drone_id, hq_id, 1 FROM delegation WHERE hq_id = '{cfg.headquarters_id}' "
+                sql += f" UNION ALL SELECT d.drone_id, d.hq_id, lvl+1 FROM chain c "
+                sql += f" JOIN delegation d ON c.drone_id = d.hq_id WHERE lvl < {depth}) SELECT count(*) FROM chain;"
+                p50, p95, p99, tps = benchmark_query(cur, sql, iterations)
+            rows.append(["scenario3", part, depth, p50, p95, p99, tps])
 
-    print(f"Partition 해제, 동기화 {recon_sync}건 --")
-    query = get_bench_query(cfg.headquarters_id, depths[0])
-    cur.execute(query)
-    cur.fetchone()
-
-    p50, p95, p99, tps = benchmark_query(cur, query, recon_sync)
-
-    print(f"Reconciliation → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
-    rows.append({
-        'scenario': 'B-3',
-        'scale_up': total,
-        'depth': depths[0],
-        'p50_ms': p50*1000,
-        'p95_ms': p95*1000,
-        'p99_ms': p99*1000,
-        'tps': tps
-    })
-
-# ─────────────────────────────────────────────────────────
-def scenario4_web_of_trust(cur, cfg, params, iterations, rows):
-    anchor = params['web_of_trust']['anchor_did']
-    lengths = params['web_of_trust']['max_path_lengths']
-
-    cur.execute("SELECT DISTINCT from_did FROM web_trust WHERE from_did <> %s;", (anchor,))
-    candidates = [r[0] for r in cur.fetchall()]
-
-    for length in lengths:
-        client = random.choice(candidates)
-        # q = f"""
-        # WITH RECURSIVE trust_path(from_did, to_did, depth) AS (
-        #   SELECT from_did, to_did, 1 FROM web_trust WHERE from_did = %s
-        #   UNION ALL
-        #   SELECT wt.from_did, wt.to_did, tp.depth + 1
-        #     FROM web_trust wt
-        #     JOIN trust_path tp ON wt.from_did = tp.to_did
-        #   WHERE tp.depth < %s
-        # )
-        # SELECT COUNT(*) FROM trust_path WHERE to_did = %s;
-        # """
-        # cur.execute(q, (client, length, anchor))
-        q = f"""
-        WITH RECURSIVE trust_path(from_did, to_did, depth) AS (
-          SELECT from_did, to_did, 1 FROM web_trust WHERE from_did = '{client}'
-          UNION ALL
-          SELECT wt.from_did, wt.to_did, tp.depth + 1
-            FROM web_trust wt
-            JOIN trust_path tp ON wt.from_did = tp.to_did
-          WHERE tp.depth < '{length}'
-        )
-        SELECT COUNT(*) FROM trust_path WHERE to_did = '{anchor}';
-        """
-        cur.execute(q)
-        cur.fetchone()
-
-        # p50, p95, p99, tps = benchmark_query_parametric(cur, q, iterations, params=(client, length, anchor))
-        p50, p95, p99, tps = benchmark_query(cur, q, iterations)
-        
-        print(f"[WebTrust len={length}] P50={p50*1000:.2f}ms, p95={p95*1000:.2f}ms, p99={p99*1000:.2f}ms, TPS={tps:.2f}")
-        rows.append({
-            'scenario':'B-4', 
-            'length':length, 
-            'p50_ms':p50*1000, 
-            'p95_ms':p95*1000, 
-            'p99_ms':p99*1000, 
-            'tps':tps
-        })
+    cur.close()
+    conn.close()
 
 
-# ─────────────────────────────────────────────────────────
-def scenario5_abac(cur, cfg, params, iterations, rows):
-    depths = params['abac']['max_depths']
+def scenario4_web_of_trust(cfg, params, iterations, rows):
+    conn = psycopg.connect(**cfg.db_params)
+    cur = conn.cursor()
 
+    wp = params['4']['web_of_trust']
+    anchor = wp['anchor_did']
+    # delegation 대신 web_trust 테이블 조회
+    cur.execute("SELECT from_did FROM web_trust;")
+    entities = [r[0] for r in cur.fetchall()]
+    lengths = wp['lengths']
+
+    for client in entities:
+        for length in lengths:
+            sql = (f"WITH RECURSIVE path(cn, lvl) AS ("
+                   f" SELECT from_did, 1 FROM web_trust WHERE from_did = '{client}' "
+                   f" UNION ALL "
+                   f" SELECT w.to_did, lvl+1 FROM path p JOIN web_trust w ON p.cn = w.from_did "
+                   f" WHERE lvl < {length}) "
+                   f" SELECT count(*) FROM path WHERE cn = '{anchor}';")
+            p50, p95, p99, tps = benchmark_query(cur, sql, iterations)
+            rows.append(["scenario4", client, length, p50, p95, p99, tps])
+
+    cur.close()
+    conn.close()
+
+
+def scenario5_abac(cfg, params, iterations, rows):
+    conn = psycopg.connect(**cfg.db_params)
+    cur = conn.cursor()
+
+    # delegation과 달리 abac_user 테이블에서 load
     cur.execute("SELECT did FROM abac_user;")
     users = [r[0] for r in cur.fetchall()]
-    cur.execute("SELECT id FROM abac_resource;")
-    resources = [r[0] for r in cur.fetchall()]
+    depths = params['5']['abac']['depths']
+    resource = params['5']['abac']['resource_id']
 
-    for depth in depths:
-        user = random.choice(users)
-        resource = random.choice(resources)
-        # q = f"""
-        # WITH RECURSIVE groups(user_did, group_id, lvl) AS (
-        #   SELECT user_did, group_id, 1 FROM abac_member WHERE user_did = %s
-        #   UNION ALL
-        #   SELECT g.user_did, s.to_id, g.lvl + 1
-        #     FROM abac_subgroup s
-        #     JOIN groups g ON s.from_id = g.group_id
-        #   WHERE g.lvl < %s
-        # )
-        # SELECT COUNT(*) FROM groups g
-        #   JOIN abac_permission p ON g.group_id = p.group_id
-        #  WHERE p.resource_id = %s;
-        # """
-        # cur.execute(q, (user, depth, resource))
-        q = f"""
-        WITH RECURSIVE groups(user_did, group_id, lvl) AS (
-          SELECT user_did, group_id, 1 FROM abac_member WHERE user_did = '{user}'
-          UNION ALL
-          SELECT g.user_did, s.to_id, g.lvl + 1
-            FROM abac_subgroup s
-            JOIN groups g ON s.from_id = g.group_id
-          WHERE g.lvl < '{depth}'
-        )
-        SELECT COUNT(*) FROM groups g
-          JOIN abac_permission p ON g.group_id = p.group_id
-         WHERE p.resource_id = '{resource}';
-        """
-        cur.execute(q)
-        cur.fetchone()
+    for user in users:
+        for depth in depths:
+            sql = ("WITH RECURSIVE chain(did, lvl) AS ("
+                   " SELECT user_did, 1 FROM abac_member WHERE user_did = '%s' " % user +
+                   " UNION ALL SELECT s.to_id, lvl+1 FROM chain c JOIN abac_subgroup s ON c.did = s.from_id WHERE lvl < %d) " % depth +
+                   " SELECT count(*) FROM chain JOIN abac_permission p ON chain.did = p.group_id AND p.resource_id = '%s';" % resource)
+            p50, p95, p99, tps = benchmark_query(cur, sql, iterations)
+            rows.append(["scenario5", user, depth, p50, p95, p99, tps])
 
-        # p50, p95, p99, tps = benchmark_query_parametric(cur, q, iterations, params=(user, depth, resource))
-        p50, p95, p99, tps = benchmark_query(cur, q, iterations)
-
-        print(f"[ABAC depth={depth}] P50={p50*1000:.2f}ms, p95={p95*1000:.2f}ms, p99={p99*1000:.2f}ms, TPS={tps:.2f}")
-        rows.append({'scenario':'B-5','depth':depth,'p50_ms':p50*1000,'p95_ms':p95*1000,'p99_ms':p99*1000,'tps':tps})
+    cur.close()
+    conn.close()
 
 
-# ─────────────────────────────────────────────────────────
-# 메인 함수
-# ─────────────────────────────────────────────────────────
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Scenario B Dynamic Topology Benchmark")
-    parser.add_argument('-c', '--config', required=True, help='Path to config JSON')
-    parser.add_argument('-s', '--scenario', required=True, choices=['1', '2', '3', '4', '5'], help='Scenario number')
+def main():
+    parser = argparse.ArgumentParser(description="Scenario B Benchmark (RDB-DID)")
+    parser.add_argument('-c', '--config', required=True)
+    parser.add_argument('-s', '--scenario', required=True, choices=['1','2','3','4','5'])
     args = parser.parse_args()
 
     cfg = TestConfig(args.config)
-    with open(args.config) as f:
-        cfg_json = json.load(f)
-
-    scale_up_nodes = cfg_json.get('scale_up_nodes', [])
-    depths = cfg_json.get('depths', [])
-    iterations = cfg_json.get('iterations', 100)
-    params = cfg.scenario_params.get(args.scenario, {})
-
-    conn = psycopg.connect(**cfg.db_params)
-    cur = conn.cursor()
-    # WAL 동기화(off) → 커밋 대기시간 제거
-    cur.execute("SET synchronous_commit = ON;")
-    print("› synchronous_commit ON 설정 완료")
+    private_key = load_private_key(cfg.private_key_path)
+    params = cfg.scenario_params
+    iterations = cfg.iterations
 
     rows = []
+    setup_database(cfg, private_key, int(args.scenario))
+
     if args.scenario == '1':
-        print("=== Running Scenario B-1: Real-Time Turn-Taking ===")
-        scenario1_realtime_turntaking(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows)
+        scenario1_realtime_turntaking(cfg, params, iterations, rows, private_key)
     elif args.scenario == '2':
-        print("=== Running Scenario B-2: Chain-Churn ===")
-        scenario2_chain_churn(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows)
+        scenario2_chain_churn(cfg, params, iterations, rows, private_key)
     elif args.scenario == '3':
-        print("=== Running Scenario B-3: Partition & Reconciliation ===")
-        scenario3_partition_reconciliation(cur, conn, cfg, params, scale_up_nodes, depths, iterations, rows)
+        scenario3_partition_reconciliation(cfg, params, iterations, rows, private_key)
     elif args.scenario == '4':
-        print("=== Running Scenario B-4: Web-of-Trust (RDB) ===")
-        scenario4_web_of_trust(cur, cfg, params, iterations, rows)
+        scenario4_web_of_trust(cfg, params, iterations, rows)
     elif args.scenario == '5':
-        print("=== Running Scenario B-5: ABAC (RDB) ===")
-        scenario5_abac(cur, cfg, params, iterations, rows)
-    else:
-        raise ValueError("Unsupported scenario for security patterns")
+        scenario5_abac(cfg, params, iterations, rows)
 
+    out = Path(f"benchmark_b_scenario_{args.scenario}.csv")
+    with out.open('w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["scenario","param1","param2","p50","p95","p99","tps"])
+        writer.writerows(rows)
 
-   # 결과 저장
-    result_dir = Path(ROOT) / cfg.data_result_path
-    result_dir.mkdir(parents=True, exist_ok=True)
-    output_file = result_dir / f"C_{args.scenario}_results.csv"
-    with open(output_file, 'w', newline='') as f:
-        cols = []
-        if args.scenario in ['1', '2', '3']:
-            cols = ['scenario', 'scale_up', 'depth', 'p50_ms', 'p95_ms', 'p99_ms', 'tps']
-        elif args.scenario == '4':
-             cols = ['scenario', 'scale_up', 'length', 'p50_ms', 'p95_ms', 'p99_ms', 'tps']
-        elif args.scenario == '5':
-            cols = ['scenario', 'scale_up', 'depth', 'p50_ms', 'p95_ms', 'p99_ms', 'tps']
-
-        writer = csv.DictWriter(f, fieldnames=cols)
-        writer.writeheader()
-        for r in rows:
-            writer.writerow(r)
-    print(f"Results written to {output_file}")
-    
-    cur.close()
-    conn.close()
+if __name__ == '__main__':
+    main()
