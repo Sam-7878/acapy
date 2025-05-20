@@ -199,14 +199,25 @@ def main():
     elif args.scenario == '5':
         scenario5_abac(cfg, params, iterations, rows)
 
+
+    # 결과 저장
     result_dir = Path(ROOT) / cfg.data_result_path
     result_dir.mkdir(parents=True, exist_ok=True)
     output_file = result_dir / f"C_{args.scenario}_results.csv"
+    with open(output_file, 'w', newline='') as f:
+        cols = []
+        if args.scenario in ['1', '2', '3']:
+            cols = ['scenario', 'scale_up', 'depth', 'p50_ms', 'p95_ms', 'p99_ms', 'tps']
+        elif args.scenario == '4':
+            cols = ['scenario', 'scale_up', 'length', 'p50_ms', 'p95_ms', 'p99_ms', 'tps']
+        elif args.scenario == '5':
+            cols = ['scenario', 'scale_up', 'depth', 'p50_ms', 'p95_ms', 'p99_ms', 'tps']
 
-    with output_file.open('w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["scenario","param1","param2","p50","p95","p99","tps"])
-        writer.writerows(rows)
+        writer = csv.DictWriter(f, fieldnames=cols)
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(r)
+    print(f"Results written to {output_file}")
 
 
 if __name__ == '__main__':
