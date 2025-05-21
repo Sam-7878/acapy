@@ -185,7 +185,6 @@ def scenario3_partition_reconciliation(cur, conn, cfg, params, scale_up_nodes, d
     conn.close()
 
 
-
 def scenario4_web_of_trust(cur, cfg, params, iterations, rows):
     # use the correct graph
     cur.execute("SET graph_path = trust_graph;")
@@ -200,16 +199,27 @@ def scenario4_web_of_trust(cur, cfg, params, iterations, rows):
 
     for length in lengths:
         client = random.choice(candidates)
+        newClient = random.choice(candidates)
 
         time.sleep(interval)
        
-        q = f"""
+        query = f"""
         MATCH path=(c:Entity {{did:'{client}'}})-[:CROSSED_SIGNED*1..{length}]->(a:Entity {{did:'{anchor}'}})
         RETURN count(path) AS path_count;
         """
+        # query = f"""
+        #     UNWIND $mappings AS pair
+        #     MATCH (d:Drone {id: pair.old})
+        #     DETACH DELETE d
+        #     CREATE (new:Drone {id: pair.new})
+        #     WITH pair, new
+        #     MATCH (hq:HQ {id: '{cfg.headquarters_id}'})
+        #     CREATE (hq)-[:DELEGATES]->(new);
+        # """
+        cur.execute(query)
+        cur.fetchone()
 
-        p50, p95, p99, tps = benchmark_query(cur, q, iterations)
-        # p50, p95, p99, tps = benchmark_query_parametric(cur, q, iterations, params=(client, length, anchor))
+        p50, p95, p99, tps = benchmark_query(cur, query, iterations)
 
         print(f"[WebTrust len={length}] P50={p50*1000:.2f}ms, p95={p95*1000:.2f}ms, p99={p99*1000:.2f}ms, TPS={tps:.2f}")
         rows.append({
@@ -222,7 +232,8 @@ def scenario4_web_of_trust(cur, cfg, params, iterations, rows):
             'tps':tps
         })
 
-    return cur, conn
+    cur.close()
+    conn.close() 
 
 
 def scenario5_abac(cur, cfg, params, iterations, rows):
@@ -235,6 +246,7 @@ def scenario5_abac(cur, cfg, params, iterations, rows):
     # 사용자 & 리소스 목록
     cur.execute("MATCH (u:AppUser) RETURN u.did;")
     users = [r[0] for r in cur.fetchall()]
+
     cur.execute("MATCH (r:Resource) RETURN r.id;")
     resources = [r[0] for r in cur.fetchall()]
 
@@ -244,14 +256,14 @@ def scenario5_abac(cur, cfg, params, iterations, rows):
 
         time.sleep(interval)
 
-        q = f"""
+        query = f"""
         MATCH (:AppUser {{did:'{user}'}})-[:MEMBER_OF*1..{depth}]->(g:AppGroup)-[:HAS_PERMISSION]->(r:Resource {{id:'{resource}'}})
         RETURN count(r) AS allowed;
         """
-        cur.execute(q)
+        cur.execute(query)
         cur.fetchone()
         
-        p50, p95, p99, tps = benchmark_query(cur, q, iterations)
+        p50, p95, p99, tps = benchmark_query(cur, query, iterations)
 
         print(f"[ABAC depth={depth}] P50={p50*1000:.2f}ms, p95={p95*1000:.2f}ms, p99={p99*1000:.2f}ms, TPS={tps:.2f}")
         rows.append({
@@ -264,7 +276,8 @@ def scenario5_abac(cur, cfg, params, iterations, rows):
             'tps':tps
         })
 
-    return cur, conn
+    cur.close()
+    conn.close()
 
 
 
@@ -278,9 +291,9 @@ if __name__ == '__main__':
     with open(args.config, 'r') as f:
         cfg_json = json.load(f)
 
-    scale_up_nodes = cfg_json.get('scale_up_nodes', [])
-    depths = cfg_json.get('depths', [])
-    iterations = cfg_json.get('iterations', 100)
+    scale_up_nodes = cfg.scale_up_nodes
+    depths = cfg.depths
+    iterations = cfg.iterations
     params = cfg.scenario_params.get(args.scenario, {})
 
     # DB 연결 및 초기 설정
@@ -317,7 +330,7 @@ if __name__ == '__main__':
     # 결과 저장
     result_dir = Path(ROOT) / cfg.data_result_path
     result_dir.mkdir(parents=True, exist_ok=True)
-    output_file = result_dir / f"D_{args.scenario}_results.csv"
+    output_file = result_dir / f"C_{args.scenario}_results.csv"
     with open(output_file, 'w', newline='') as f:
         cols = []
         if args.scenario in ['1', '2', '3']:

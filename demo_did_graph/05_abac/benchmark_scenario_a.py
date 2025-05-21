@@ -41,7 +41,11 @@ def get_bench_query(start_hq: str, depth: int) -> str:
     SELECT COUNT(*) AS drone_count FROM chain;
     """
 
-
+def load_drones(cur):
+    # delegation 테이블에서 등록된 드론 DID 목록을 로드
+    cur.execute("SELECT drone_id FROM delegation;")
+    rows = cur.fetchall()
+    return [row[0] for row in rows]
 
 # ─────────────────────────────────────────────────────────
 # Scenario별 워크로드 함수
@@ -49,7 +53,8 @@ def get_bench_query(start_hq: str, depth: int) -> str:
 def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterations, rows):
     interval = params['turn_taking']['interval_sec']
     ratio = params['turn_taking']['update_ratio']
-    depths = cfg.depths
+    drones_list = load_drones(cur)
+    chunk_size = cfg.chunk_size
 
     for num_nodes in nodes:
         print(f"\n-- Scale-up: update_count based on {num_nodes} nodes (Turn-Taking) --")
@@ -58,11 +63,10 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
             # Delegation 업데이트
             update_count = int(num_nodes * ratio)
             # 그 중에서 update_count 만큼 랜덤 샘플링
-            drones = random.sample(range(num_nodes), update_count)
-            # drones = random.sample(drones_list, update_count)
+            # drones = random.sample(range(num_nodes), update_count)
+            drones = random.sample(drones_list, update_count)
 
             # ─── moderate‐sized batch 업데이트 ───
-            chunk_size = cfg.chunk_size
             for i in range(0, len(drones), chunk_size):
                 chunk = [str(d) for d in drones[i:i+chunk_size]]   # ensure they're strings
                 cur.execute(

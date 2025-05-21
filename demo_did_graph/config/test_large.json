@@ -19,7 +19,7 @@
   "private_key_path": "common/keys/commander_private.pem",
   "data_result_path": "data/result/05_abac",
   "scale_up_nodes": [2000, 5000, 10000],
-  "depths": [4, 8, 12],
+  "depths": [2, 4, 6, 8],
   "iterations": 400,
   "chunk_size": 1000,
   "scenario_params": {
@@ -40,7 +40,7 @@
     },
     "2": {
       "chain_churn": {
-        "depth_cycle": [4, 8, 12],
+        "depth_cycle": [4, 8, 12, 16],
         "cycle_interval_sec": 10,
         "update_ratio": 0.1
       },
@@ -64,14 +64,14 @@
     },
     "4": {
       "web_of_trust": {
-        "max_path_lengths": [4, 8, 12, 16],
+        "max_path_lengths": [2, 4, 6, 8],
         "anchor_did": "HQ"
       },
       "network": {
         "delay_ms_range": [50, 200],
         "packet_loss_rate": 0.01,
         "link_partition": {
-          "cycle_interval_sec": 20,
+          "cycle_interval_sec": 3,
           "drop_percent": 0.05,
           "recover_after_sec": 3
         }

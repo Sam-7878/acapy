@@ -19,8 +19,8 @@
   "private_key_path": "common/keys/commander_private.pem",
   "data_result_path": "data/result/05_abac",
   "scale_up_nodes": [100, 500, 1000],
-  "depths": [2, 4, 6, 8],
-  "iterations": 10,
+  "depths": [4, 6, 8, 12],
+  "iterations": 100,
   "chunk_size": 500,
   "scenario_params": {
     "1": {
@@ -64,7 +64,7 @@
     },
     "4": {
       "web_of_trust": {
-        "max_path_lengths": [2, 4, 6, 8],
+        "max_path_lengths": [3, 6, 9, 12],
         "anchor_did": "HQ"
       },
       "network": {
