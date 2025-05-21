@@ -49,8 +49,10 @@ def get_bench_query(start_hq: str, depth: int) -> str:
 def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterations, rows):
     interval = params['turn_taking']['interval_sec']
     ratio = params['turn_taking']['update_ratio']
+    depths = cfg.depths
+
     for num_nodes in nodes:
-        print(f"\n-- Scale-up: {num_nodes} nodes (Turn-Taking) --")
+        print(f"\n-- Scale-up: update_count based on {num_nodes} nodes (Turn-Taking) --")
 
         for depth in depths:
             # Delegation 업데이트
@@ -62,12 +64,16 @@ def scenario1_realtime_turntaking(cur, conn, cfg, params, nodes, depths, iterati
             # ─── moderate‐sized batch 업데이트 ───
             chunk_size = cfg.chunk_size
             for i in range(0, len(drones), chunk_size):
-                chunk = drones[i:i+chunk_size]
+                chunk = [str(d) for d in drones[i:i+chunk_size]]   # ensure they're strings
                 cur.execute(
-                    "UPDATE delegation SET hq_id = %s WHERE drone_id = ANY(%s)",
+                    """
+                    UPDATE delegation
+                    SET hq_id = %s
+                    WHERE drone_id = ANY(%s::text[])
+                    """,
                     (cfg.headquarters_id, chunk)
                 )
-                conn.commit()
+            conn.commit()
 
             time.sleep(interval)
 

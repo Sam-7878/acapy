@@ -32,19 +32,21 @@ def scenario1_realtime_turntaking(cfg, params, iterations, rows, private_key):
     cur = conn.cursor()
 
     # 드론 목록 로드
-    drones = load_drones(cur)
+    drones_list = load_drones(cur)
     hq = cfg.headquarters_id
     depths = cfg.depths
+
     scale_nodes = cfg.scale_up_nodes
-    ratio = params['1']['turn_taking']['update_ratio']
+    ratio = params['turn_taking']['update_ratio']
+    interval = params['turn_taking']['interval_sec']
 
     for num_nodes in scale_nodes:
         print(f"\n-- Scale-up: update_count based on {num_nodes} nodes (Turn-Taking) --")
 
         for depth in depths:
-            update_count = int(len(drones) * ratio)
+            update_count = int(num_nodes * ratio)
             # 샘플링: DB 로드된 DID 리스트 사용
-            sample_dids = random.sample(drones, update_count)
+            sample_dids = random.sample(drones_list, update_count)
             # 위임 관계 삭제
             for did in sample_dids:
                 cur.execute(
@@ -60,16 +62,20 @@ def scenario1_realtime_turntaking(cfg, params, iterations, rows, private_key):
                 )
             conn.commit()
 
+            time.sleep(interval)
+
             # 벤치마크 위한 쿼리
-            sql = f"WITH RECURSIVE chain(drone_id, hq_id, lvl) AS ("
-            sql += f" SELECT drone_id, hq_id, 1 FROM delegation WHERE hq_id = '{hq}' "
-            sql += f" UNION ALL "
-            sql += f" SELECT d.drone_id, d.hq_id, lvl+1 FROM chain c "
-            sql += f" JOIN delegation d ON c.drone_id = d.hq_id "
-            sql += f" WHERE lvl < {depth}) SELECT count(*) FROM chain;"
+            query = f"WITH RECURSIVE chain(drone_id, hq_id, lvl) AS ("
+            query += f" SELECT drone_id, hq_id, 1 FROM delegation WHERE hq_id = '{hq}' "
+            query += f" UNION ALL "
+            query += f" SELECT d.drone_id, d.hq_id, lvl+1 FROM chain c "
+            query += f" JOIN delegation d ON c.drone_id = d.hq_id "
+            query += f" WHERE lvl < {depth}) SELECT count(*) FROM chain;"
+            cur.execute(query)
+            cur.fetchone()
 
             # 벤치마크
-            p50, p95, p99, tps = benchmark_query(cur, sql, iterations)
+            p50, p95, p99, tps = benchmark_query(cur, query, iterations)
 
             print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
             rows.append({
@@ -90,11 +96,11 @@ def scenario2_chain_churn(cfg, params, iterations, rows, private_key):
     cur = conn.cursor()
 
     drones = load_drones(cur)
-    depths = params['2']['chain_churn']['depths']
-    ratio = params['2']['chain_churn']['churn_ratio']
-    scale_nodes = params['2']['chain_churn']['scale_up_nodes']
+    depths = cfg.depths
+    scale_nodes = cfg.scale_up_nodes
+    ratio = params['2']['chain_churn']['update_ratio']
 
-    for nodes in scale_nodes:
+    for num_nodes in scale_nodes:
         for depth in depths:
             churn_count = int(len(drones) * ratio)
             sample_dids = random.sample(drones, churn_count)
@@ -109,13 +115,27 @@ def scenario2_chain_churn(cfg, params, iterations, rows, private_key):
                 )
             conn.commit()
 
+            # 벤치마크 위한 쿼리
+            # 체인 깊이와 노드 수에 따라 쿼리 생성
             sql = f"WITH RECURSIVE chain(drone_id, hq_id, lvl) AS ("
             sql += f" SELECT drone_id, hq_id, 1 FROM delegation WHERE hq_id = '{cfg.headquarters_id}' "
             sql += f" UNION ALL SELECT d.drone_id, d.hq_id, lvl+1 FROM chain c "
             sql += f" JOIN delegation d ON c.drone_id = d.hq_id WHERE lvl < {depth}) SELECT count(*) FROM chain;"
 
+
+            # 벤치마크
             p50, p95, p99, tps = benchmark_query(cur, sql, iterations)
-            rows.append(["scenario2", nodes, depth, p50, p95, p99, tps])
+
+            print(f"Depth {depth} → P50: {p50*1000:.2f} ms, P95: {p95*1000:.2f} ms, P99: {p99*1000:.2f} ms, TPS: {tps:.2f}")
+            rows.append({
+                'scenario': f'B-1',
+                'scale_up': num_nodes,
+                'depth': depth,
+                'p50_ms': p50*1000,
+                'p95_ms': p95*1000,
+                'p99_ms': p99*1000,
+                'tps': tps
+            })
 
     cur.close()
     conn.close()
@@ -211,7 +231,7 @@ def main():
 
     cfg = TestConfig(args.config)
     private_key = load_private_key(cfg.private_key_path)
-    params = cfg.scenario_params
+    params = cfg.scenario_params.get(args.scenario, {})
     iterations = cfg.iterations
 
     rows = []

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # setup_scenario_c.py
-# Scenario C 환경 설정: DID 인증 + AgensGraph(GraphDB) 기반 다양한 보안 시나리오 (Non-optimized)
+# Scenario C 환경 설정: DID 인증 + AgensGraph(GraphDB) 기반 다양한 보안 시나리오
 
 import argparse
+import time
 import sys
 import json
+import random
 from pathlib import Path
 import psycopg
 
@@ -17,7 +19,7 @@ from common.did_utils import load_private_key, create_prefixed_did, create_vc_si
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Setup Scenario C environment with various security graph scenarios (non-optimized)."
+        description="Setup Scenario C environment with various security graph scenarios."
     )
     parser.add_argument('--config', '-c', required=True,
                         help='Path to JSON config file (e.g., config/test_small.json)')
@@ -29,123 +31,163 @@ def parse_args():
 
 
 def setup_dynamic_graph(cur, cfg, private_key):
-    # Scenario 1~3: 기본 DID 인증 그래프 초기화
+    # 기존 시나리오 1~3용 초기 그래프
+    # (HQ, Drone, VC) 구조를 초기화
     cur.execute("DROP GRAPH IF EXISTS vc_graph CASCADE;")
     cur.execute("CREATE GRAPH vc_graph;")
     cur.execute("SET graph_path = vc_graph;")
+    cur.connection.commit()
 
-    # 스키마 설정
-    for lbl in ("HQ", "Drone", "VC", "VC_Issuer"):  
-        cur.execute(f"CREATE VLABEL IF NOT EXISTS {lbl};")
-    for et in ("DELEGATES", "ASSERTS"):  
-        cur.execute(f"CREATE ELABEL IF NOT EXISTS {et};")
-    for label, prop in [("HQ", "id"), ("Drone", "id"), ("VC", "vc_json")]:
+    # VLABEL / ELABEL / INDEX
+    for lbl in ("HQ", "Drone", "VC", "VC_Issuer"): cur.execute(f"CREATE VLABEL IF NOT EXISTS {lbl};")
+    for et in ("DELEGATES", "ASSERTS"): cur.execute(f"CREATE ELABEL IF NOT EXISTS {et};")
+    for label, prop in [("HQ", "id"), ("Drone","id"), ("VC","vc_json")]:
         cur.execute(f"CREATE PROPERTY INDEX ON {label}({prop});")
+    cur.connection.commit()
 
     # HQ 노드
-    hq_id = cfg.headquarters_id
-    cur.execute(f"CREATE (:HQ {{id:'{hq_id}'}});")
+    cfg_id = cfg.headquarters_id
+    cur.execute(f"CREATE (:HQ {{id:'{cfg_id}'}});")
 
     # Drone 및 DELEGATES
     drones = []
     for i in range(cfg.num_drones):
-        did = create_prefixed_did('drone', i)
-        drones.append(did)
-        cur.execute(f"CREATE (:Drone {{id:'{did}'}});")
+        d = create_prefixed_did('drone', i)
+        drones.append(d)
+        cur.execute(f"CREATE (:Drone {{id:'{d}'}});")
         cur.execute(
-            f"MATCH (h:HQ {{id:'{hq_id}'}}),(d:Drone {{id:'{did}'}}) CREATE (h)-[:DELEGATES]->(d);")
+            f"MATCH (h:HQ {{id:'{cfg_id}'}}),(d:Drone {{id:'{d}'}}) "
+            f"CREATE (h)-[:DELEGATES]->(d);")
+    cur.connection.commit()
 
     # VC_Issuer
     issuer = create_prefixed_did('issuer', 0)
     cur.execute(f"CREATE (:VC_Issuer {{did:'{issuer}'}});")
+    cur.connection.commit()
 
     # VC 및 ASSERTS
     for idx, sub in enumerate(drones):
         vc_doc = create_vc_simple({'index':idx}, private_key, issuer)
+        # bytes → hex 문자열로 변환
         vc_clean = vc_doc.copy()
         vc_clean['signature'] = vc_clean['signature'].hex()
+        # 이제 JSON으로 직렬화 가능
         vjson = json.dumps(vc_clean).replace("'", "\\'")
         vid = vc_doc.get('id', create_prefixed_did('vc', idx))
+
         cur.execute(
             f"CREATE (:VC {{vc_id:'{vid}', issuer:'{issuer}', subject:'{sub}', vc_json:'{vjson}'}});")
         cur.execute(
-            f"MATCH (v:VC {{vc_id:'{vid}'}}),(d:Drone {{id:'{sub}'}}) CREATE (v)-[:ASSERTS]->(d);")
+            f"MATCH (v:VC {{vc_id:'{vid}'}}),(d:Drone {{id:'{sub}'}}) "
+            f"CREATE (v)-[:ASSERTS]->(d);")
+    cur.connection.commit()
+    print(f"› Dynamic graph (scenarios 1-3) initialized: {cfg.num_drones} drones, VCs")
 
 
 def setup_web_of_trust(cur, cfg):
-    # Scenario 4: Web-of-Trust 그래프 초기화
+    # Scenario 4: Web-of-Trust
     cur.execute("DROP GRAPH IF EXISTS trust_graph CASCADE;")
     cur.execute("CREATE GRAPH trust_graph;")
     cur.execute("SET graph_path = trust_graph;")
+    cur.connection.commit()
 
-    # 스키마 설정
+    # VLABEL/ELABEL/INDEX
     cur.execute("CREATE VLABEL IF NOT EXISTS Entity;")
     cur.execute("CREATE ELABEL IF NOT EXISTS CROSSED_SIGNED;")
     cur.execute("CREATE PROPERTY INDEX ON Entity(did);")
+    cur.connection.commit()
 
-    # Anchor 및 체인 노드
+    # Anchor 엔티티
     anchor = cfg.scenario_params['4']['web_of_trust']['anchor_did']
     cur.execute(f"CREATE (:Entity {{did:'{anchor}'}});")
+
+    # 랜덤 Entity 및 체인 생성
     entities = []
     for i in range(cfg.num_drones):
-        did = create_prefixed_did('entity', i)
-        entities.append(did)
-        cur.execute(f"CREATE (:Entity {{did:'{did}'}});")
+        e = create_prefixed_did('entity', i)
+        entities.append(e)
+        cur.execute(f"CREATE (:Entity {{did:'{e}'}});")
+    cur.connection.commit()
 
-    # 선형 사인 체인 생성
+    # 선형 체인 및 Anchor 연결
     for i in range(len(entities)-1):
-        a, b = entities[i], entities[i+1]
-        cur.execute(f"MATCH (x:Entity {{did:'{a}'}}),(y:Entity {{did:'{b}'}}) CREATE (x)-[:CROSSED_SIGNED]->(y);")
+        cur.execute(
+            f"MATCH (a:Entity {{did:'{entities[i]}'}}),(b:Entity {{did:'{entities[i+1]}'}}) "
+            f"CREATE (a)-[:CROSSED_SIGNED]->(b);")
     cur.execute(
-        f"MATCH (x:Entity {{did:'{entities[-1]}'}}),(y:Entity {{did:'{anchor}'}}) CREATE (x)-[:CROSSED_SIGNED]->(y);")
+        f"MATCH (a:Entity {{did:'{entities[-1]}'}}),(b:Entity {{did:'{anchor}'}}) "
+        f"CREATE (a)-[:CROSSED_SIGNED]->(b);")
+    cur.connection.commit()
+    print(f"› Web-of-Trust graph initialized: {len(entities)} Entities with chain to anchor {anchor}")
 
 
 def setup_abac(cur, cfg):
-    # Scenario 5: ABAC 그래프 초기화
+    # Scenario 5: 다단계 ABAC (라벨 User → AppUser 로 변경)
     cur.execute("DROP GRAPH IF EXISTS abac_graph CASCADE;")
     cur.execute("CREATE GRAPH abac_graph;")
     cur.execute("SET graph_path = abac_graph;")
+    cur.connection.commit()
 
-    # 스키마 설정
+    # VLABEL/ELABEL/INDEX
     for lbl in ('AppUser', 'AppGroup', 'Resource'):
-        cur.execute(f"CREATE VLABEL IF NOT EXISTS \"{lbl}\";")
+        cur.execute(f'CREATE VLABEL "{lbl}";')
     for et in ('MEMBER_OF', 'SUBGROUP_OF', 'HAS_PERMISSION'):
-        cur.execute(f"CREATE ELABEL IF NOT EXISTS \"{et}\";")
+        cur.execute(f'CREATE ELABEL "{et}";')
+
+    # 라벨명이 바뀌었으니 인덱스도 AppUser 로
     cur.execute("CREATE PROPERTY INDEX ON \"AppUser\"(did);")
     cur.execute("CREATE PROPERTY INDEX ON \"AppGroup\"(id);")
     cur.execute("CREATE PROPERTY INDEX ON \"Resource\"(id);")
+    cur.connection.commit()
 
-    # 노드 생성
+    # 유저, 그룹, 리소스 노드 생성
     users = [create_prefixed_did('user', i) for i in range(cfg.num_drones)]
     groups = [create_prefixed_did('group', i) for i in range(max(1, cfg.num_drones//10))]
     resources = [create_prefixed_did('resource', i) for i in range(len(groups))]
+    
+     # AppUser 노드 생성
     for u in users:
         cur.execute(f"CREATE (:AppUser {{did:'{u}'}});")
-    for g in groups:
+    for g in groups: 
         cur.execute(f"CREATE (:AppGroup {{id:'{g}'}});")
-    for r in resources:
+    for r in resources: 
         cur.execute(f"CREATE (:Resource {{id:'{r}'}});")
+    cur.connection.commit()
 
-    # 관계 생성
+    # MEMBER_OF: 사용자 -> 그룹 (round-robin)
     for idx, u in enumerate(users):
         g = groups[idx % len(groups)]
         cur.execute(
-            f"MATCH (x:AppUser {{did:'{u}'}}),(y:AppGroup {{id:'{g}'}}) CREATE (x)-[:MEMBER_OF]->(y);")
+            f"MATCH (u:AppUser {{did:'{u}'}}),(g:AppGroup {{id:'{g}'}}) "
+            f"CREATE (u)-[:MEMBER_OF]->(g);")
+    cur.connection.commit()
+
+    # SUBGROUP_OF: 그룹 체인
     for i in range(len(groups)-1):
-        a, b = groups[i], groups[i+1]
         cur.execute(
-            f"MATCH (x:AppGroup {{id:'{a}'}}),(y:AppGroup {{id:'{b}'}}) CREATE (x)-[:SUBGROUP_OF]->(y);")
+            f"MATCH (a:AppGroup {{id:'{groups[i]}'}}),(b:AppGroup {{id:'{groups[i+1]}'}}) "
+            f"CREATE (a)-[:SUBGROUP_OF]->(b);")
+    cur.connection.commit()
+
+    # HAS_PERMISSION: 최상위 그룹 -> 모든 리소스
     top = groups[-1]
     for r in resources:
         cur.execute(
-            f"MATCH (x:AppGroup {{id:'{top}'}}),(y:Resource {{id:'{r}'}}) CREATE (x)-[:HAS_PERMISSION]->(y);")
+            f"MATCH (g:AppGroup {{id:'{top}'}}),(r:Resource {{id:'{r}'}}) "
+            f"CREATE (g)-[:HAS_PERMISSION]->(r);")
+    cur.connection.commit()
+    print(f"› ABAC graph initialized: {len(users)} Users, {len(groups)} Groups, {len(resources)} Resources")
 
 
 def setup_database(cfg: TestConfig, private_key, scenario: int):
+    # 새로운 연결로 락 분리
     conn = psycopg.connect(**cfg.db_params)
     cur = conn.cursor()
+    # 성능 최적화
+    cur.execute("SET synchronous_commit = ON;")
+    conn.commit()
 
-    if scenario in (1, 2, 3):
+    if scenario in (1,2,3):
         setup_dynamic_graph(cur, cfg, private_key)
     elif scenario == 4:
         setup_web_of_trust(cur, cfg)
@@ -154,10 +196,9 @@ def setup_database(cfg: TestConfig, private_key, scenario: int):
     else:
         raise ValueError(f"Unsupported scenario: {scenario}")
 
-    # 일괄 커밋 (비최적화)
-    conn.commit()
     cur.close()
     conn.close()
+    print(f"Scenario C-{scenario} environment setup complete.")
 
 
 if __name__ == '__main__':

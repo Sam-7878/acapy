@@ -42,7 +42,7 @@
       "chain_churn": {
         "depth_cycle": [2, 4, 6, 8],
         "cycle_interval_sec": 3,
-        "update_ratio": 0.1
+        "update_ratio": 0.2
       },
       "network": {
         "extra_delay_after_change_ms": 50,
@@ -71,7 +71,7 @@
         "delay_ms_range": [20, 100],
         "packet_loss_rate": 0.01,
         "link_partition": {
-          "interval_sec": 20,
+          "cycle_interval_sec": 20,
           "drop_percent": 0.05,
           "recover_after_sec": 3
         }
@@ -85,7 +85,7 @@
         "delay_ms_range": [20, 100],
         "packet_loss_rate": 0.01,
         "link_partition": {
-          "interval_sec": 20,
+          "cycle_interval_sec": 20,
           "drop_percent": 0.05,
           "recover_after_sec": 3
         }
